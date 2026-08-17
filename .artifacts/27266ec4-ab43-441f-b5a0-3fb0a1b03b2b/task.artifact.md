@@ -1,0 +1,37 @@
+- [x] Add OkHttp and Serialization dependencies to `libs.versions.toml`
+- [x] Add dependencies and apply Serialization plugin in `app/build.gradle.kts`
+- [x] Sync Gradle
+- [x] Create `RadioViewModel.kt` for API polling
+- [x] Update `MainActivity.kt` to integrate `RadioViewModel` and dynamic UI
+- [x] Implement Basic Video Background and remove station name UI
+- [x] Implement Seamless Video Crossfade (Dual Player Mix)
+- [x] Fix rotation restart and implement Play/Pause toggle
+- [x] Implement Background Playback & Media Session
+- [x] Implement Text Marquee effect for long titles/artists
+- [x] Implement Visual Spectrum Equalizer
+- [x] Implement News Ticker (Always Scrolling Text)
+- [x] Implement Global Audio Visualizer (Fix Swipe/Pause freeze)
+- [x] Implement System Notification Marquee (News Ticker)
+- [x] Fix Pause Crash & Stability Improvements
+- [x] Fix Visualizer static issue (Session ID sync)
+- [x] Restore Visualizer Functionality
+- [x] Implement DJ Tempo Detection & 4s Toggle Loop
+- [x] Implement Dual DJ Sampler (4s & 8s Loops)
+- [x] Implement Triple DJ Sampler with Beat-Synced 2s Loop
+- [x] Implement Multi-Layer DJ Sampler (Audio Mixing)
+- [x] Implement Smart Rhythmic Toggle Loop (Stop at end of cycle)
+- [x] Implement Professional DJ Beat-Quantized Sync (Snap to Grid)
+- [x] Implement Independent Live Volume Slider (Auto-Ducking)
+- [x] Finalize Real-time Procedural Visualizer (Hybrid with real energy)
+- [x] Refactor Hold-to-Pause interaction inside the photo
+- [x] Implement Professional Phase-Sync (Ultra Exact Slide Sync)
+- [x] Verify rhythmic perfection and zero-drift
+- [x] Implement DJ Precision: Auto-Ducking & Beat Slicing
+- [x] Implement Master Volume with Smooth Fade (Fade In/Out)
+- [x] Implement Independent Streaming Volume (Slider fix)
+- [x] Implement DJ Beat Analyzer Visualizer
+- [x] Implement Deep Analysis (10s) with Rhythmic Magnet
+- [x] Fix Notification click to open app
+    - [x] Create PendingIntent in `PlaybackService.kt`
+    - [x] Set session activity in `MediaSession`
+- [x] Verify notification interaction
