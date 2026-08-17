@@ -34,15 +34,20 @@ class PlaybackService : MediaSessionService() {
     private val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Bloqueo total: Si perdemos el foco por cualquier motivo, PAUSA
-                Log.d("PlaybackService", "Foco perdido ($focusChange). Forzando Pausa.")
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // Pausa total para llamadas o apps que requieren foco exclusivo (como TikTok)
+                Log.d("PlaybackService", "Foco perdido ($focusChange). Pausando.")
                 player?.pause()
             }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // PARA NOTIFICACIONES: Solo bajamos el volumen (Ducking)
+                Log.d("PlaybackService", "Ducking detectado ($focusChange). Bajando volumen.")
+                player?.volume = 0.2f
+            }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                // REANUDACIÓN AUTOMÁTICA: Si recuperamos el foco, volvemos a sonar
-                Log.d("PlaybackService", "Foco recuperado. Reanudando música.")
+                // Recuperamos volumen y reanudamos si estaba pausado
+                Log.d("PlaybackService", "Foco recuperado. Restaurando volumen.")
+                player?.volume = 1.0f
                 player?.play()
             }
         }
@@ -92,11 +97,9 @@ class PlaybackService : MediaSessionService() {
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
-                    // Cambiamos a ALARM como último recurso: HyperOS suele darle exclusividad total
-                    // a las alarmas y silencia todo lo demás. Probemos si así logramos la pausa forzada.
-                    .setContentType(C.AUDIO_CONTENT_TYPE_UNKNOWN)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
-                false // Seguimos manual
+                false // Seguimos manual para controlar el Ducking sutilmente
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -138,9 +141,6 @@ class PlaybackService : MediaSessionService() {
             audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(playbackAttributes)
                 .setAcceptsDelayedFocusGain(true)
-                // OBLIGAMOS AL SISTEMA A PAUSAR EN VEZ DE BAJAR EL VOLUMEN (ANTI-DUCKING)
-                // Especialmente efectivo en HyperOS/Xiaomi
-                .setWillPauseWhenDucked(true) 
                 .setOnAudioFocusChangeListener(focusListener)
                 .build()
             

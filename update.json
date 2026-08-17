@@ -1,6 +1,6 @@
 {
-  "versionCode": 26,
-  "versionName": "4.0 Gradual",
+  "versionCode": 27,
+  "versionName": "4.1 Notificaciones",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡EFECTO TORNAMESA TOTAL! Restaurado el frenado y arranque gradual en el botón de pausa. ¡Mambo 100% analógico! 🚀💿⚡️"
+  "releaseNotes": "¡MEJORA DE AUDIO! Ahora la música baja de volumen suavemente (Ducking) al recibir notificaciones en lugar de pausarse. 📩🔊✨"
 }
