@@ -133,7 +133,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Radio_verticalTheme {
-                Box(modifier = Modifier.fillMaxSize()) {
+                // Background is solid Color.Black
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                     RadioApp(player = mediaController)
                 }
             }
@@ -338,9 +339,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
     
     var isPlayingState by remember { mutableStateOf(true) }
-    var countdownProgress by remember { mutableFloatStateOf(0f) }
-    var isCountdownActive by remember { mutableStateOf(false) }
-    var isStartingActive by remember { mutableStateOf(false) } 
     var isLocked by remember { mutableStateOf(false) }
     var isLockPressed by remember { mutableStateOf(false) }
     var isPausePressed by remember { mutableStateOf(false) }
@@ -367,7 +365,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val isCalibrated by PlaybackService.isCalibrated.collectAsState()
     val calibrationCountdown by PlaybackService.calibrationCountdown.collectAsState()
 
-    // Sistema de Buffer para sincronizar visuales con el audio real de los parlantes
+    // Sistema de Buffer para sincronizar visuales con el audio real de los parlantes (ROBUST SYNC)
     LaunchedEffect(Unit) {
         val historyL = mutableListOf<Pair<Long, Float>>()
         val historyR = mutableListOf<Pair<Long, Float>>()
@@ -376,14 +374,14 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             historyL.add(now to PlaybackService.currentEnergyL.value)
             historyR.add(now to PlaybackService.currentEnergyR.value)
             
-            // Buscamos el valor que ocurrió hace ~140ms
+            // Compensación de latencia hardware (140ms)
             while (historyL.isNotEmpty() && now - historyL.first().first > 140) {
                 delayedEnergyL = historyL.removeAt(0).second
             }
             while (historyR.isNotEmpty() && now - historyR.first().first > 140) {
                 delayedEnergyR = historyR.removeAt(0).second
             }
-            delay(16) // Muestreo a 60fps
+            delay(16) // ~60fps sync
         }
     }
 
@@ -403,53 +401,12 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { 
                 isPlayingState = isPlaying 
-                if (!isPlaying) isStartingActive = false // Reset si el sistema pausa
             }
             override fun onPlayerError(error: PlaybackException) { Log.e("RadioApp", "Player Error: ${error.message}") }
         }
         player?.addListener(listener)
         isPlayingState = player?.isPlaying ?: false
         onDispose { player?.removeListener(listener) }
-    }
-
-    LaunchedEffect(isCountdownActive) {
-        if (isCountdownActive) {
-            val totalSteps = 300
-            for (i in totalSteps downTo 1) {
-                if (!isCountdownActive) break
-                val speed = (i.toFloat() / totalSteps).coerceIn(0.1f, 1.0f)
-                player?.playbackParameters = PlaybackParameters(speed)
-                countdownProgress = speed
-                delay(10)
-            }
-            if (isCountdownActive) {
-                player?.pause()
-                player?.playbackParameters = PlaybackParameters(1.0f)
-                isCountdownActive = false
-            }
-        } else {
-            if (!PlaybackService.stutterProcessor.isScratching && !isStartingActive) {
-                player?.playbackParameters = PlaybackParameters(1.0f)
-            }
-        }
-    }
-
-    // EFECTO DE ARRANQUE GRADUAL (ESTILO TORNAMESA REAL)
-    LaunchedEffect(isStartingActive) {
-        if (isStartingActive) {
-            isCountdownActive = false
-            player?.playbackParameters = PlaybackParameters(0.1f)
-            player?.play()
-            val totalSteps = 100
-            for (i in 1..totalSteps) {
-                if (!isStartingActive) break
-                val speed = (0.1f + (i.toFloat() / totalSteps) * 0.9f).coerceIn(0.1f, 1.0f)
-                player?.playbackParameters = PlaybackParameters(speed)
-                delay(12)
-            }
-            player?.playbackParameters = PlaybackParameters(1.0f)
-            isStartingActive = false
-        }
     }
 
     LaunchedEffect(pagerState.currentPage, player) {
@@ -465,45 +422,37 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val mediaItem = MediaItem.Builder().setUri(station.url).setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtist(station.name).build()).build()
             currentPlayer.setMediaItem(mediaItem)
             currentPlayer.prepare()
-            delay(500)
+            // Direct start, no arbitrary delay
             currentPlayer.play()
         }
     }
 
-    // ACTUALIZACIÓN DE METADATA (EN EL PLAYER Y NOTIFICACIÓN DEL SISTEMA)
     LaunchedEffect(metadata, player) {
         val currentPlayer = player ?: return@LaunchedEffect
         if (metadata.title.isNotEmpty() && metadata.title != "Cargando..." && metadata.title != "En vivo") {
             try {
                 val currentItem = currentPlayer.currentMediaItem
                 if (currentItem != null) {
-                    // TRUCO: Agregamos espacios y repetimos para forzar el Marquee en el Sistema
                     val displayTitle = metadata.title + "          " 
                     val displayArtist = metadata.artist + "          "
                     
                     val newMetadata = MediaMetadata.Builder()
                         .setTitle(displayTitle)
                         .setArtist(displayArtist)
-                        .setDisplayTitle(displayTitle) // Campo específico para notificaciones
+                        .setDisplayTitle(displayTitle)
                         .setArtworkUri(metadata.artworkUrl?.toUri())
                         .build()
                     
-                    // Actualizamos la metadata de la lista de reproducción
                     currentPlayer.setPlaylistMetadata(newMetadata)
-                    
-                    // Actualizamos el item actual sin reiniciar el stream
-                    val newItem = currentItem.buildUpon()
-                        .setMediaMetadata(newMetadata)
-                        .build()
+                    val newItem = currentItem.buildUpon().setMediaMetadata(newMetadata).build()
                     currentPlayer.replaceMediaItem(currentPlayer.currentMediaItemIndex, newItem)
                 }
             } catch (e: Exception) {
-                Log.e("RadioApp", "Error al actualizar metadata de notificación: ${e.message}")
+                Log.e("RadioApp", "Error al actualizar metadata: ${e.message}")
             }
         }
     }
 
-    // ESTADO DE CALIDAD DE AUDIO
     var audioQuality by remember { mutableStateOf("Detectando calidad...") }
 
     LaunchedEffect(pagerState.currentPage, isPlayingState) {
@@ -538,19 +487,19 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 artworkUrl = if (pagerState.currentPage == page) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
                 isActive = pagerState.currentPage == page, 
                 isPlaying = isPlayingState, 
-                isCountdownActive = isCountdownActive, 
-                onPauseRequest = { isCountdownActive = true }, 
-                countdownProgress = countdownProgress, 
+                isCountdownActive = false, 
+                onPauseRequest = { player?.pause() }, 
+                countdownProgress = 0f, 
                 bpm = currentBpm, 
-                realEnergyL = if (isPlayingState || isCountdownActive) delayedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                realEnergyR = if (isPlayingState || isCountdownActive) delayedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                realEnergyL = if (isPlayingState) delayedEnergyL else 0f, 
+                realEnergyR = if (isPlayingState) delayedEnergyR else 0f, 
                 isMagnetActive = isMagnetActive, 
                 isCalibrated = isCalibrated, 
                 calibrationCountdown = calibrationCountdown, 
                 player = player, 
-                onScratchStart = { isCountdownActive = false }, 
-                onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
-                onBrakeStart = { isCountdownActive = true },
+                onScratchStart = { }, 
+                onScratchEnd = { if (!it) { player?.play() } }, 
+                onBrakeStart = { player?.pause() },
                 isAluminum = isAluminumMode,
                 onToggleAluminum = { isAluminumMode = !isAluminumMode },
                 onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
@@ -558,7 +507,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             )
         }
 
-        // BOTÓN CANDADO (ACCIÓN INSTANTÁNEA)
+        // LEFT LOCK BUTTON
         Box(modifier = Modifier
             .padding(bottom = 48.dp, start = 24.dp)
             .align(Alignment.BottomStart)
@@ -571,12 +520,10 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 detectTapGestures(
                     onPress = {
                         isLockPressed = true
+                        vibratePhone(context, 50)
                         try { awaitRelease() } finally { isLockPressed = false }
                     },
-                    onTap = {
-                        isLocked = !isLocked
-                        vibratePhone(context, 50)
-                    }
+                    onTap = { isLocked = !isLocked }
                 )
             }, 
             contentAlignment = Alignment.Center
@@ -584,10 +531,8 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             Canvas(modifier = Modifier.size(28.dp)) {
                 val w = size.width
                 val h = size.height
-                // CERRADO: Blanco Brillante (0.95f) | ABIERTO: Blanco Oscuro (0.3f)
                 val lockColor = if (isLocked) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
                 
-                // Base del candado (Cuerpo)
                 drawRoundRect(
                     color = lockColor,
                     topLeft = Offset(0f, h * 0.4f),
@@ -595,34 +540,23 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
                 )
                 
-                // Arco del candado (Arriba)
                 if (isLocked) {
-                    // CERRADO
                     drawArc(
-                        color = lockColor,
-                        startAngle = 180f,
-                        sweepAngle = 180f,
-                        useCenter = false,
-                        topLeft = Offset(w * 0.2f, h * 0.1f),
-                        size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
+                        color = lockColor, startAngle = 180f, sweepAngle = 180f, useCenter = false,
+                        topLeft = Offset(w * 0.2f, h * 0.1f), size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                     )
                 } else {
-                    // ABIERTO
                     drawArc(
-                        color = lockColor,
-                        startAngle = 180f,
-                        sweepAngle = 180f,
-                        useCenter = false,
-                        topLeft = Offset(w * 0.2f, -h * 0.15f), // Desplazado arriba para parecer abierto
-                        size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
+                        color = lockColor, startAngle = 180f, sweepAngle = 180f, useCenter = false,
+                        topLeft = Offset(w * 0.2f, -h * 0.15f), size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                     )
                 }
             }
         }
 
-        // BOTÓN PAUSA / PLAY (ALINEACIÓN OPUESTA AL CANDADO)
+        // RIGHT PAUSE/PLAY BUTTON
         Box(modifier = Modifier
             .padding(bottom = 48.dp, end = 24.dp)
             .align(Alignment.BottomEnd)
@@ -635,12 +569,11 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 detectTapGestures(
                     onPress = {
                         isPausePressed = true
+                        vibratePhone(context, 50)
                         try { awaitRelease() } finally { isPausePressed = false }
                     },
                     onTap = {
-                        if (isPlayingState) isCountdownActive = true
-                        else isStartingActive = true
-                        vibratePhone(context, 50)
+                        if (isPlayingState) player?.pause() else player?.play()
                     }
                 )
             }, 
@@ -649,16 +582,13 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             Canvas(modifier = Modifier.size(24.dp)) {
                 val w = size.width
                 val h = size.height
-                // PAUSADO: Blanco Brillante (0.95f) | SONANDO: Blanco Oscuro (0.3f)
                 val iconColor = if (!isPlayingState) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
                 
                 if (isPlayingState) {
-                    // ICONO PAUSA (Dos barras)
                     val barW = w * 0.3f
                     drawRect(iconColor, Offset(0f, 0f), androidx.compose.ui.geometry.Size(barW, h))
                     drawRect(iconColor, Offset(w - barW, 0f), androidx.compose.ui.geometry.Size(barW, h))
                 } else {
-                    // ICONO PLAY (Triángulo)
                     val path = androidx.compose.ui.graphics.Path().apply {
                         moveTo(0f, 0f)
                         lineTo(w, h / 2f)
@@ -670,7 +600,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             }
         }
 
-        // TEXTO IAIO RADIO (INTERACTIVO: HOLD PARA INFO)
+        // CENTER SIGNATURE: * IAIO *
         Row(
             modifier = Modifier
                 .padding(bottom = 68.dp)
@@ -692,133 +622,58 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                     }
                 },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val pulse = if (currentBpm > 0) 60000 / currentBpm else 800
             val anim = rememberInfiniteTransition(label = "iaioLiveAnim")
             val iaioLiveAlpha by anim.animateFloat(
-                initialValue = 0.3f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse),
-                label = "alpha"
+                initialValue = 0.3f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha"
             )
+            val signatureColor = if (isMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
 
-            // PUNTO DE ESTADO IZQUIERDO
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(if (isMagnetActive) Color.Cyan else Color.Red.copy(alpha = iaioLiveAlpha))
-            )
+            Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
             
-            // TEXTO CAMBIANTE CON MARQUEE RÁPIDO
             Text(
                 text = if (isShowInfo) "IAIO RADIO 2026 , VERSION 2.0, bdozuniga@gmail.com..... " else "IAIO",
                 color = if (isMagnetActive) Color.Cyan else Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                maxLines = 1,
-                modifier = Modifier
-                    .alpha(0.8f)
-                    .widthIn(max = if (isShowInfo) 200.dp else 200.dp)
-                    .basicMarquee(
-                        iterations = Int.MAX_VALUE,
-                        velocity = if (isShowInfo) 80.dp else 0.dp,
-                        spacing = MarqueeSpacing(48.dp)
-                    )
+                fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1,
+                modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(
+                    iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)
+                )
             )
 
-            // PUNTO DE ESTADO DERECHO (NUEVO)
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(if (isMagnetActive) Color.Cyan else Color.Red.copy(alpha = iaioLiveAlpha))
-            )
+            Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
-        // OVERLAY DE ACTUALIZACIÓN (MAMBO NUEVO DETECTADO)
+        // OTA UPDATE OVERLAY
         updateInfo?.let { info ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.85f)),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
                 Column(
-                    modifier = Modifier
-                        .padding(32.dp)
-                        .background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(24.dp),
+                    modifier = Modifier.padding(32.dp).background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp)).border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "¡MAMBO NUEVO! 🚀",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black
-                    )
+                    Text(text = "¡MAMBO NUEVO! 🚀", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "IAIO ha lanzado la Versión ${info.versionName}",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    Text(text = "IAIO ha lanzado la Versión ${info.versionName}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, textAlign = TextAlign.Center)
                     if (info.releaseNotes.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = info.releaseNotes,
-                            color = Color.Cyan.copy(alpha = 0.8f),
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center
-                        )
+                        Text(text = info.releaseNotes, color = Color.Cyan.copy(alpha = 0.8f), fontSize = 12.sp, textAlign = TextAlign.Center)
                     }
                     Spacer(Modifier.height(24.dp))
-                    
                     if (isDownloadingUpdate) {
-                        CircularProgressIndicator(
-                            progress = { downloadProgress },
-                            color = Color.Cyan,
-                            strokeWidth = 4.dp
-                        )
+                        CircularProgressIndicator(progress = { downloadProgress }, color = Color.Cyan, strokeWidth = 4.dp)
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "${(downloadProgress * 100).toInt()}%",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
+                        Text(text = "${(downloadProgress * 100).toInt()}%", color = Color.White, fontSize = 12.sp)
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Text(
-                                text = "LUEGO",
-                                color = Color.White.copy(alpha = 0.4f),
-                                modifier = Modifier
-                                    .pointerInput(Unit) { detectTapGestures { updateInfo = null } }
-                                    .padding(8.dp),
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "ACTUALIZAR",
-                                color = Color.Cyan,
-                                modifier = Modifier
-                                    .background(Color.Cyan.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                    .border(1.dp, Color.Cyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                    .pointerInput(Unit) {
-                                        detectTapGestures {
-                                            isDownloadingUpdate = true
-                                            scope.launch {
-                                                updateManager.downloadAndInstallApk(info) { progress ->
-                                                    downloadProgress = progress
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                fontWeight = FontWeight.Black
-                            )
+                            Text(text = "LUEGO", color = Color.White.copy(alpha = 0.4f), modifier = Modifier.pointerInput(Unit) { detectTapGestures { updateInfo = null } }.padding(8.dp), fontWeight = FontWeight.Bold)
+                            Text(text = "ACTUALIZAR", color = Color.Cyan, modifier = Modifier.background(Color.Cyan.copy(alpha = 0.1f), RoundedCornerShape(8.dp)).border(1.dp, Color.Cyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).pointerInput(Unit) {
+                                detectTapGestures {
+                                    isDownloadingUpdate = true
+                                    scope.launch { updateManager.downloadAndInstallApk(info) { downloadProgress = it } }
+                                }
+                            }.padding(horizontal = 16.dp, vertical = 8.dp), fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -834,47 +689,18 @@ fun DefaultVinyl(referentialUrl: String?, isAluminum: Boolean) {
     val grooveColor = if (isAluminum) Color.Black.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.05f)
     val labelColor = if (isAluminum) Color(0xFFE0E0E0) else Color(0xFF1A1A1A)
 
-    Box(
-        modifier = Modifier
-            .size(330.dp)
-            .clip(CircleShape)
-            .background(bgColor),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = Modifier.size(330.dp).clip(CircleShape).background(bgColor), contentAlignment = Alignment.Center) {
         if (referentialUrl != null) {
-            AsyncImage(
-                model = referentialUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().alpha(0.5f),
-                contentScale = ContentScale.Crop
-            )
+            AsyncImage(model = referentialUrl, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(0.5f), contentScale = ContentScale.Crop)
         }
-        
         Canvas(modifier = Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2
-            drawCircle(
-                brush = Brush.sweepGradient(
-                    0.0f to brushColor,
-                    0.2f to Color.Transparent,
-                    0.5f to brushColor,
-                    0.7f to Color.Transparent,
-                    1.0f to brushColor
-                ),
-                radius = radius
-            )
+            drawCircle(brush = Brush.sweepGradient(0.0f to brushColor, 0.2f to Color.Transparent, 0.5f to brushColor, 0.7f to Color.Transparent, 1.0f to brushColor), radius = radius)
             for (i in 1..25) {
-                drawCircle(
-                    color = grooveColor,
-                    radius = radius * (0.35f + (i / 25f) * 0.65f),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5.dp.toPx())
-                )
+                drawCircle(color = grooveColor, radius = radius * (0.35f + (i / 25f) * 0.65f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5.dp.toPx()))
             }
             drawCircle(color = labelColor, radius = radius * 0.35f)
-            drawCircle(
-                color = brushColor,
-                radius = radius * 0.35f,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
-            )
+            drawCircle(color = brushColor, radius = radius * 0.35f, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()))
         }
     }
 }
@@ -886,8 +712,8 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
     var currentRotation by remember { mutableStateOf(0f) }
     var isTouching by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isPlaying, isCountdownActive, isTouching) {
-        if (isPlaying || isCountdownActive || isTouching) {
+    LaunchedEffect(isPlaying, isTouching) {
+        if (isPlaying || isTouching) {
             var lastFrameTimeNanos = 0L
             while (true) {
                 withFrameNanos { time ->
@@ -928,20 +754,7 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     }
                 }
             }, horizontalAlignment = Alignment.Start) {
-                Text(
-                    text = "RADIO : ${station.name}", 
-                    color = Color.White, 
-                    fontSize = 14.sp, 
-                    fontWeight = FontWeight.ExtraBold, 
-                    maxLines = 1,
-                    modifier = Modifier
-                        .alpha(0.9f)
-                        .fillMaxWidth()
-                        .basicMarquee(
-                            iterations = Int.MAX_VALUE,
-                            spacing = MarqueeSpacing(48.dp)
-                        )
-                )
+                Text(text = "RADIO : ${station.name}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, spacing = MarqueeSpacing(48.dp)))
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val pulse = if (bpm > 0) 60000 / bpm else 800
@@ -949,161 +762,65 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     val liveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse))
                     Box(Modifier.size(8.dp).clip(CircleShape).background(if (isMagnetActive) Color.Cyan else Color.Red.copy(alpha = liveAlpha)))
                     Text(text = if (!isCalibrated) "ANALYZING (${calibrationCountdown}s)" else "LIVE", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.alpha(0.8f))
-                    
-                    // DETALLE DE CALIDAD DE AUDIO (TEXTO DESLIZANTE - TICKER)
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = audioQuality,
-                        color = Color.White, 
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold, 
-                        maxLines = 1,
-                        modifier = Modifier
-                            .weight(1f)
-                            .basicMarquee(iterations = Int.MAX_VALUE)
-                            .alpha(0.9f)
-                    )
+                    Text(text = audioQuality, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE).alpha(0.9f))
                 }
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "CANCION : ${title.ifEmpty { "En vivo" }}", 
-                    color = Color.White, 
-                    fontSize = 14.sp, 
-                    fontWeight = FontWeight.ExtraBold, 
-                    maxLines = 1,
-                    modifier = Modifier
-                        .alpha(0.9f)
-                        .fillMaxWidth()
-                        .basicMarquee(
-                            iterations = Int.MAX_VALUE,
-                            velocity = 40.dp
-                        )
-                )
+                Text(text = "CANCION : ${title.ifEmpty { "En vivo" }}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 40.dp))
                 if (artist.isNotEmpty()) {
-                    Text(
-                        text = "ARTISTA : $artist", 
-                        color = Color.White, 
-                        fontSize = 14.sp, 
-                        fontWeight = FontWeight.ExtraBold, 
-                        maxLines = 1,
-                        modifier = Modifier
-                            .alpha(0.9f)
-                            .fillMaxWidth()
-                            .basicMarquee(
-                                iterations = Int.MAX_VALUE,
-                                velocity = 35.dp
-                            )
-                    )
+                    Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
                 }
             }
             Spacer(modifier = Modifier.height(48.dp))
-            
-            Box(modifier = Modifier.pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = { onToggleOscillator() })
-            }) {
+            Box(modifier = Modifier.pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) {
                 if (isActive) SpectrumVisualizer(isPlaying, realEnergyL, realEnergyR)
             }
-
             Spacer(modifier = Modifier.height(36.dp))
-            
             val beatDuration = if (bpm > 0) 60000 / bpm else 500
             val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
-            val beatPulse by infiniteBeat.animateFloat(
-                initialValue = 1f,
-                targetValue = 1.6f, 
-                animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse),
-                label = "pulse"
-            )
+            val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
             val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
             val finalScale = beatPulse * energyFactor
-
             Box(modifier = Modifier.size(360.dp).pointerInput(player) {
-                detectTapGestures(
-                    onDoubleTap = { onToggleAluminum() },
-                    onPress = { 
-                        isTouching = true
-                        var initialAngle = Math.toDegrees(atan2((it.y - 180.dp.toPx()).toDouble(), (it.x - 180.dp.toPx()).toDouble())).toFloat()
-                        var isDragging = false
-                        PlaybackService.stutterProcessor.isScratching = true
-                        
-                        try {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    vibratePhone(context, 5)
-                                    if (event.changes.count { it.pressed } >= 2) { 
-                                        isTouching = false; isDragging = false; 
-                                        PlaybackService.stutterProcessor.isScratching = false; 
-                                        onBrakeStart(); break 
-                                    }
-                                    val pointer = event.changes.firstOrNull { it.pressed }
-                                    if (pointer == null) { 
-                                        isTouching = false; 
-                                        PlaybackService.stutterProcessor.isScratching = false; 
-                                        onScratchEnd(!isPlaying); break 
-                                    }
-                                    val currentAngle = Math.toDegrees(atan2((pointer.position.y - 180.dp.toPx()).toDouble(), (pointer.position.x - 180.dp.toPx()).toDouble())).toFloat()
-                                    var delta = currentAngle - initialAngle
-                                    if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
-                                    if (Math.abs(delta) > 0.5f || isDragging) {
-                                        if (!isDragging) { isDragging = true; onScratchStart() }
-                                        currentRotation = (currentRotation + delta) % 360f
-                                        PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f)
-                                        initialAngle = currentAngle
-                                    }
+                detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
+                    isTouching = true
+                    var initialAngle = Math.toDegrees(atan2((it.y - 180.dp.toPx()).toDouble(), (it.x - 180.dp.toPx()).toDouble())).toFloat()
+                    var isDragging = false
+                    PlaybackService.stutterProcessor.isScratching = true
+                    try {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                vibratePhone(context, 5)
+                                if (event.changes.count { it.pressed } >= 2) { isTouching = false; isDragging = false; PlaybackService.stutterProcessor.isScratching = false; onBrakeStart(); break }
+                                val pointer = event.changes.firstOrNull { it.pressed }
+                                if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
+                                val currentAngle = Math.toDegrees(atan2((pointer.position.y - 180.dp.toPx()).toDouble(), (pointer.position.x - 180.dp.toPx()).toDouble())).toFloat()
+                                var delta = currentAngle - initialAngle
+                                if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
+                                if (Math.abs(delta) > 0.5f || isDragging) {
+                                    if (!isDragging) { isDragging = true; onScratchStart() }
+                                    currentRotation = (currentRotation + delta) % 360f
+                                    PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f)
+                                    initialAngle = currentAngle
                                 }
                             }
-                        } finally {
-                            isTouching = false
-                            PlaybackService.stutterProcessor.isScratching = false
                         }
-                    }
-                )
+                    } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
+                })
             }, contentAlignment = Alignment.Center) {
                 Box(Modifier.fillMaxSize().rotate(currentRotation), contentAlignment = Alignment.Center) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        drawCircle(Color(0xFF2B2B2B), size.minDimension / 2)
-                    }
+                    Canvas(Modifier.fillMaxSize()) { drawCircle(Color(0xFF2B2B2B), size.minDimension / 2) }
                     Box(Modifier.size(340.dp).clip(CircleShape).background(Color.Black))
                     Box(Modifier.size(330.dp).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
-                        SubcomposeAsyncImage(
-                            model = artworkUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            error = { DefaultVinyl(station.logoUrl, isAluminum) },
-                            loading = { DefaultVinyl(station.logoUrl, isAluminum) }
-                        )
+                        SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
                     }
-                    
-                    // RAYA NEÓN VERDE (INDICADOR DE GIRO)
                     Canvas(Modifier.size(328.dp)) {
-                        // Resplandor (glow)
-                        drawArc(
-                            color = Color(0xFF00FF41).copy(alpha = 0.4f),
-                            startAngle = -5f,
-                            sweepAngle = 40f,
-                            useCenter = false,
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                        )
-                        // Raya principal
-                        drawArc(
-                            color = Color(0xFF00FF41),
-                            startAngle = 0f,
-                            sweepAngle = 30f,
-                            useCenter = false,
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                        )
+                        drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                        drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .scale(if (isPlaying) finalScale else 1f)
-                        .clip(CircleShape)
-                        .background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                )
+                Box(modifier = Modifier.size(10.dp).scale(if (isPlaying) finalScale else 1f).clip(CircleShape).background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
             }
             Spacer(Modifier.height(56.dp))
         }
