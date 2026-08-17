@@ -1,6 +1,6 @@
 {
-  "versionCode": 3,
-  "versionName": "2.1",
+  "versionCode": 4,
+  "versionName": "2.2",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡Test de Actualización 2.1! Sincronización maestra de 140ms y firma interactiva IAIO activada. 🚀✨"
+  "releaseNotes": "¡Gran Prueba de fuego v2.2! Si ves este mensaje, el sistema OTA es 100% indestructible. 🚀🔥"
 }
