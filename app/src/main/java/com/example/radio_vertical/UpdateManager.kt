@@ -35,14 +35,20 @@ class UpdateManager(private val context: Context) {
     suspend fun checkForUpdates(currentVersionCode: Int): UpdateInfo? {
         return withContext(Dispatchers.IO) {
             try {
-                val request = Request.Builder().url(UPDATE_URL).build()
+                // Truco para evitar el cache de GitHub Raw (Query param aleatorio)
+                val nocacheUrl = "$UPDATE_URL?t=${System.currentTimeMillis()}"
+                val request = Request.Builder().url(nocacheUrl).build()
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: return@withContext null
+                        Log.d("UpdateManager", "Body received: $body")
                         val info = json.decodeFromString<UpdateInfo>(body)
+                        Log.d("UpdateManager", "GitHub Version: ${info.versionCode}, Local: $currentVersionCode")
                         if (info.versionCode > currentVersionCode) {
                             return@withContext info
                         }
+                    } else {
+                        Log.e("UpdateManager", "Server error: ${response.code}")
                     }
                 }
             } catch (e: Exception) {
