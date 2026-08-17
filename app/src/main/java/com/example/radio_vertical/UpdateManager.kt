@@ -69,8 +69,8 @@ class UpdateManager(private val context: Context) {
                     }
                 }
 
-                // Usamos GetExternalFilesDir para evitar restricciones de HyperOS
-                val apkFile = File(context.getExternalFilesDir(null), "update.apk")
+                // Cambiamos a la carpeta de archivos interna, la más segura para FileProvider
+                val apkFile = File(context.filesDir, "update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 val request = Request.Builder().url(info.apkUrl).build()
@@ -95,15 +95,12 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    // ASEGURAR QUE EL ARCHIVO SEA LEGIBLE POR EL INSTALADOR
-                    apkFile.setReadable(true, false)
-                    
-                    Log.d("UpdateManager", "APK lista para forzar instalación: ${apkFile.absolutePath}")
-                    delay(800) // Delay un poco más largo para HyperOS
+                    Log.d("UpdateManager", "APK descargada en internal storage: ${apkFile.absolutePath}")
+                    delay(1000) // Un segundo de respiro para que el sistema procese el archivo
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Error downloading APK: ${e.message}")
+                Log.e("UpdateManager", "Error en el proceso de descarga: ${e.message}")
             }
         }
     }
@@ -116,20 +113,17 @@ class UpdateManager(private val context: Context) {
                 file
             )
 
-            // USAMOS UN INTENT MÁS AGRESIVO PARA SKINEAR SISTEMAS
+            // INTENT ESTÁNDAR (A veces lo más simple es lo que mejor funciona en HyperOS)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                // Truco extra para Xiaomi: Inyectar el MIME explícito
-                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
             
-            Log.d("UpdateManager", "Lanzando Intent de instalación...")
+            Log.d("UpdateManager", "Intent lanzado. Esperando al sistema...")
             context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Fallo crítico al abrir instalador: ${e.message}")
+            Log.e("UpdateManager", "Error al abrir el instalador de Android: ${e.message}")
         }
     }
 }
