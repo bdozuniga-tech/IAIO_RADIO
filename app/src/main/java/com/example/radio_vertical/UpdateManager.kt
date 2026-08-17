@@ -8,6 +8,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -68,12 +69,14 @@ class UpdateManager(private val context: Context) {
                     }
                 }
 
+                // Guardamos en External Cache para máxima compatibilidad con HyperOS
+                val apkFile = File(context.externalCacheDir, "update.apk")
+                if (apkFile.exists()) apkFile.delete() // Limpiar versiones viejas
+
                 val request = Request.Builder().url(info.apkUrl).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@withContext
 
-                    // Guardamos en FilesDir para mayor compatibilidad con FileProvider
-                    val apkFile = File(context.filesDir, "update.apk")
                     val body = response.body ?: return@withContext
                     val totalSize = body.contentLength()
                     
@@ -92,7 +95,9 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    Log.d("UpdateManager", "APK descargada en: ${apkFile.absolutePath}")
+                    Log.d("UpdateManager", "APK lista en: ${apkFile.absolutePath}")
+                    // PEQUEÑO DELAY PARA QUE EL SISTEMA REGISTRE EL ARCHIVO
+                    delay(500)
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
