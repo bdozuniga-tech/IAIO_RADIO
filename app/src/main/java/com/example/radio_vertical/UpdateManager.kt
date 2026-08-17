@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -69,14 +70,14 @@ class UpdateManager(private val context: Context) {
                     }
                 }
 
-                // Usamos la carpeta de caché estándar
+                // Usamos la carpeta de caché interna, la más compatible para instalaciones directas
                 val apkFile = File(context.cacheDir, "update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 val request = Request.Builder().url(info.apkUrl).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        Log.e("UpdateManager", "Download failed: ${response.code}")
+                        Log.e("UpdateManager", "Descarga fallida: ${response.code}")
                         return@withContext
                     }
 
@@ -98,12 +99,21 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    Log.d("UpdateManager", "Descarga completada. Iniciando instalador...")
-                    delay(500)
+                    // Darle permiso de lectura real (Legacy)
+                    apkFile.setReadable(true, false)
+                    
+                    Log.d("UpdateManager", "Descarga completada al 100%. Iniciando fase de instalación...")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Descarga lista, instalando...", Toast.LENGTH_SHORT).show()
+                    }
+                    delay(800)
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Error crítico en actualización: ${e.message}")
+                Log.e("UpdateManager", "Fallo crítico en actualización: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -122,11 +132,11 @@ class UpdateManager(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             
-            Log.d("UpdateManager", "Ejecutando startActivity para instalación")
+            Log.d("UpdateManager", "Lanzando instalador de Android...")
             context.startActivity(intent)
             
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Error al abrir el archivo APK: ${e.message}")
+            Log.e("UpdateManager", "Error al ejecutar el instalador: ${e.message}")
         }
     }
 }
