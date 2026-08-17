@@ -1,6 +1,6 @@
 {
-  "versionCode": 27,
-  "versionName": "4.1 Notificaciones",
+  "versionCode": 28,
+  "versionName": "4.2 Changelog",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡MEJORA DE AUDIO! Ahora la música baja de volumen suavemente (Ducking) al recibir notificaciones en lugar de pausarse. 📩🔊✨"
+  "releaseNotes": "¡INFO DE AUTOR DINÁMICA! Ahora al tocar 'IAIO' verás el detalle técnico y las mejoras de la versión en tiempo real. 🚀📜✨"
 }

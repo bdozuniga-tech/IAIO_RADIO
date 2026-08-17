@@ -695,7 +695,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
             
             Text(
-                text = if (isShowInfo) "IAIO RADIO 2026 , VERSION 2.0, bdozuniga@gmail.com..... " else "IAIO",
+                text = if (isShowInfo) "IAIO RADIO v4.1 (vCode 27) • MEJORAS: Restauración del efecto tornamesa (frenado/arranque gradual) • Activación del Ducking de Audio (baja volumen sutilmente con los mensajes) • bdozuniga@gmail.com..... " else "IAIO",
                 color = if (isMagnetActive) Color.Cyan else Color.White,
                 fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1,
                 modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(
