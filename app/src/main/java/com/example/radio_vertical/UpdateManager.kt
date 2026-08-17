@@ -69,8 +69,8 @@ class UpdateManager(private val context: Context) {
                     }
                 }
 
-                // Cambiamos a la carpeta de archivos interna, la más segura para FileProvider
-                val apkFile = File(context.filesDir, "update.apk")
+                // Usamos External Cache - suele ser lo más efectivo para que el instalador externo vea el archivo
+                val apkFile = File(context.externalCacheDir, "update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 val request = Request.Builder().url(info.apkUrl).build()
@@ -95,12 +95,15 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    Log.d("UpdateManager", "APK descargada en internal storage: ${apkFile.absolutePath}")
-                    delay(1000) // Un segundo de respiro para que el sistema procese el archivo
+                    // IMPORTANTE: Dar permisos de lectura al archivo para el instalador externo
+                    apkFile.setReadable(true, false)
+                    
+                    Log.d("UpdateManager", "Descarga finalizada. APK en: ${apkFile.absolutePath}")
+                    delay(500)
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Error en el proceso de descarga: ${e.message}")
+                Log.e("UpdateManager", "Error en descarga/instalación: ${e.message}")
             }
         }
     }
@@ -113,17 +116,31 @@ class UpdateManager(private val context: Context) {
                 file
             )
 
-            // INTENT ESTÁNDAR (A veces lo más simple es lo que mejor funciona en HyperOS)
+            // ESTRATEGIA DUAL: Probamos el Intent estándar y si no, uno de respaldo
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             
-            Log.d("UpdateManager", "Intent lanzado. Esperando al sistema...")
+            Log.d("UpdateManager", "Lanzando instalador de Android...")
             context.startActivity(intent)
+            
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Error al abrir el instalador de Android: ${e.message}")
+            Log.e("UpdateManager", "Error al abrir instalador: ${e.message}")
+            // Intento de emergencia con Action Install
+            try {
+                val apkUri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                val backupIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                    data = apkUri
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(backupIntent)
+            } catch (e2: Exception) {
+                Log.e("UpdateManager", "Fallo total de instalación: ${e2.message}")
+            }
         }
     }
 }

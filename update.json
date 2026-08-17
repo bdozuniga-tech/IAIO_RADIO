@@ -1,6 +1,6 @@
 {
-  "versionCode": 12,
-  "versionName": "3.0 Relanzamiento",
+  "versionCode": 14,
+  "versionName": "3.2 Final",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡MÁXIMA POTENCIA! Relanzamiento del sistema de actualización con motor de detección reforzado. 🚀🛰️🏆"
+  "releaseNotes": "¡TEST SUPREMO V3.2! Parche de permisos de lectura y FileProvider expandido para HyperOS. 🚀🛡️⚡️"
 }

@@ -352,8 +352,15 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     var downloadProgress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
-        val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionCode
-        updateInfo = updateManager.checkForUpdates(currentVersion)
+        // Esperamos 2 segundos para que el sistema y el internet estén estables
+        delay(2000)
+        try {
+            val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            updateInfo = updateManager.checkForUpdates(currentVersion)
+            Log.d("RadioApp", "Update Check: Local=$currentVersion, Info=$updateInfo")
+        } catch (e: Exception) {
+            Log.e("RadioApp", "Error in Update Check: ${e.message}")
+        }
     }
 
     // SINCRONIZACIÓN DE AUDIO Y VISUALES (Compensación de Latencia de 140ms)
