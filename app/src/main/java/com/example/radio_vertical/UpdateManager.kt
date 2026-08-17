@@ -69,9 +69,9 @@ class UpdateManager(private val context: Context) {
                     }
                 }
 
-                // Guardamos en External Cache para máxima compatibilidad con HyperOS
-                val apkFile = File(context.externalCacheDir, "update.apk")
-                if (apkFile.exists()) apkFile.delete() // Limpiar versiones viejas
+                // Usamos GetExternalFilesDir para evitar restricciones de HyperOS
+                val apkFile = File(context.getExternalFilesDir(null), "update.apk")
+                if (apkFile.exists()) apkFile.delete()
 
                 val request = Request.Builder().url(info.apkUrl).build()
                 client.newCall(request).execute().use { response ->
@@ -95,9 +95,11 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    Log.d("UpdateManager", "APK lista en: ${apkFile.absolutePath}")
-                    // PEQUEÑO DELAY PARA QUE EL SISTEMA REGISTRE EL ARCHIVO
-                    delay(500)
+                    // ASEGURAR QUE EL ARCHIVO SEA LEGIBLE POR EL INSTALADOR
+                    apkFile.setReadable(true, false)
+                    
+                    Log.d("UpdateManager", "APK lista para forzar instalación: ${apkFile.absolutePath}")
+                    delay(800) // Delay un poco más largo para HyperOS
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
@@ -107,18 +109,27 @@ class UpdateManager(private val context: Context) {
     }
 
     private fun installApk(file: File) {
-        val apkUri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
+        try {
+            val apkUri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
 
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // USAMOS UN INTENT MÁS AGRESIVO PARA SKINEAR SISTEMAS
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                // Truco extra para Xiaomi: Inyectar el MIME explícito
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+            
+            Log.d("UpdateManager", "Lanzando Intent de instalación...")
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e("UpdateManager", "Fallo crítico al abrir instalador: ${e.message}")
         }
-        
-        context.startActivity(intent)
     }
 }
