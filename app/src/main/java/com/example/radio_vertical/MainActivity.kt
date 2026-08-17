@@ -339,6 +339,9 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
     
     var isPlayingState by remember { mutableStateOf(true) }
+    var countdownProgress by remember { mutableFloatStateOf(0f) }
+    var isCountdownActive by remember { mutableStateOf(false) }
+    var isStartingActive by remember { mutableStateOf(false) } 
     var isLocked by remember { mutableStateOf(false) }
     var isLockPressed by remember { mutableStateOf(false) }
     var isPausePressed by remember { mutableStateOf(false) }
@@ -415,12 +418,54 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { 
                 isPlayingState = isPlaying 
+                if (!isPlaying) isStartingActive = false
             }
             override fun onPlayerError(error: PlaybackException) { Log.e("RadioApp", "Player Error: ${error.message}") }
         }
         player?.addListener(listener)
         isPlayingState = player?.isPlaying ?: false
         onDispose { player?.removeListener(listener) }
+    }
+
+    // EFECTO DE FRENADO GRADUAL
+    LaunchedEffect(isCountdownActive) {
+        if (isCountdownActive) {
+            val totalSteps = 300
+            for (i in totalSteps downTo 1) {
+                if (!isCountdownActive) break
+                val speed = (i.toFloat() / totalSteps).coerceIn(0.1f, 1.0f)
+                player?.playbackParameters = PlaybackParameters(speed)
+                countdownProgress = speed
+                delay(10)
+            }
+            if (isCountdownActive) {
+                player?.pause()
+                player?.playbackParameters = PlaybackParameters(1.0f)
+                isCountdownActive = false
+            }
+        } else {
+            if (!PlaybackService.stutterProcessor.isScratching && !isStartingActive) {
+                player?.playbackParameters = PlaybackParameters(1.0f)
+            }
+        }
+    }
+
+    // EFECTO DE ARRANQUE GRADUAL (ESTILO TORNAMESA REAL)
+    LaunchedEffect(isStartingActive) {
+        if (isStartingActive) {
+            isCountdownActive = false
+            player?.playbackParameters = PlaybackParameters(0.1f)
+            player?.play()
+            val totalSteps = 150
+            for (i in 1..totalSteps) {
+                if (!isStartingActive) break
+                val speed = (0.1f + (i.toFloat() / totalSteps) * 0.9f).coerceIn(0.1f, 1.0f)
+                player?.playbackParameters = PlaybackParameters(speed)
+                delay(8)
+            }
+            player?.playbackParameters = PlaybackParameters(1.0f)
+            isStartingActive = false
+        }
     }
 
     LaunchedEffect(pagerState.currentPage, player) {
@@ -501,19 +546,19 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 artworkUrl = if (pagerState.currentPage == page) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
                 isActive = pagerState.currentPage == page, 
                 isPlaying = isPlayingState, 
-                isCountdownActive = false, 
-                onPauseRequest = { player?.pause() }, 
-                countdownProgress = 0f, 
+                isCountdownActive = isCountdownActive, 
+                onPauseRequest = { isCountdownActive = true }, 
+                countdownProgress = countdownProgress, 
                 bpm = currentBpm, 
-                realEnergyL = if (isPlayingState) delayedEnergyL else 0f, 
-                realEnergyR = if (isPlayingState) delayedEnergyR else 0f, 
+                realEnergyL = if (isPlayingState || isCountdownActive) delayedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                realEnergyR = if (isPlayingState || isCountdownActive) delayedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
                 isMagnetActive = isMagnetActive, 
                 isCalibrated = isCalibrated, 
                 calibrationCountdown = calibrationCountdown, 
                 player = player, 
-                onScratchStart = { }, 
-                onScratchEnd = { if (!it) { player?.play() } }, 
-                onBrakeStart = { player?.pause() },
+                onScratchStart = { isCountdownActive = false }, 
+                onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
+                onBrakeStart = { isCountdownActive = true },
                 isAluminum = isAluminumMode,
                 onToggleAluminum = { isAluminumMode = !isAluminumMode },
                 onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
@@ -587,7 +632,8 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                         try { awaitRelease() } finally { isPausePressed = false }
                     },
                     onTap = {
-                        if (isPlayingState) player?.pause() else player?.play()
+                        if (isPlayingState) isCountdownActive = true
+                        else isStartingActive = true
                     }
                 )
             }, 
