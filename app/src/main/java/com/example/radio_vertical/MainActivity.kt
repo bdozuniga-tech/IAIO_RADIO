@@ -352,14 +352,21 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     var downloadProgress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
-        // Esperamos 2 segundos para que el sistema y el internet estén estables
         delay(2000)
         try {
-            val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val currentVersion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode
+            }
+            
+            Log.d("RadioApp", "Checking update: Current Version Code = $currentVersion")
             updateInfo = updateManager.checkForUpdates(currentVersion)
-            Log.d("RadioApp", "Update Check: Local=$currentVersion, Info=$updateInfo")
+            Log.d("RadioApp", "Update Info received: $updateInfo")
         } catch (e: Exception) {
-            Log.e("RadioApp", "Error in Update Check: ${e.message}")
+            Log.e("RadioApp", "Update check failed: ${e.message}")
         }
     }
 

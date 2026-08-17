@@ -69,13 +69,16 @@ class UpdateManager(private val context: Context) {
                     }
                 }
 
-                // Usamos External Cache - suele ser lo más efectivo para que el instalador externo vea el archivo
-                val apkFile = File(context.externalCacheDir, "update.apk")
+                // Usamos la carpeta de caché estándar
+                val apkFile = File(context.cacheDir, "update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 val request = Request.Builder().url(info.apkUrl).build()
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@withContext
+                    if (!response.isSuccessful) {
+                        Log.e("UpdateManager", "Download failed: ${response.code}")
+                        return@withContext
+                    }
 
                     val body = response.body ?: return@withContext
                     val totalSize = body.contentLength()
@@ -95,15 +98,12 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    // IMPORTANTE: Dar permisos de lectura al archivo para el instalador externo
-                    apkFile.setReadable(true, false)
-                    
-                    Log.d("UpdateManager", "Descarga finalizada. APK en: ${apkFile.absolutePath}")
+                    Log.d("UpdateManager", "Descarga completada. Iniciando instalador...")
                     delay(500)
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Error en descarga/instalación: ${e.message}")
+                Log.e("UpdateManager", "Error crítico en actualización: ${e.message}")
             }
         }
     }
@@ -116,31 +116,17 @@ class UpdateManager(private val context: Context) {
                 file
             )
 
-            // ESTRATEGIA DUAL: Probamos el Intent estándar y si no, uno de respaldo
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             
-            Log.d("UpdateManager", "Lanzando instalador de Android...")
+            Log.d("UpdateManager", "Ejecutando startActivity para instalación")
             context.startActivity(intent)
             
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Error al abrir instalador: ${e.message}")
-            // Intento de emergencia con Action Install
-            try {
-                val apkUri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                val backupIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                    data = apkUri
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(backupIntent)
-            } catch (e2: Exception) {
-                Log.e("UpdateManager", "Fallo total de instalación: ${e2.message}")
-            }
+            Log.e("UpdateManager", "Error al abrir el archivo APK: ${e.message}")
         }
     }
 }

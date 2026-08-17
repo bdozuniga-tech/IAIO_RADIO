@@ -1,6 +1,6 @@
 {
-  "versionCode": 14,
-  "versionName": "3.2 Final",
+  "versionCode": 16,
+  "versionName": "3.4 Final",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡TEST SUPREMO V3.2! Parche de permisos de lectura y FileProvider expandido para HyperOS. 🚀🛡️⚡️"
+  "releaseNotes": "¡TEST SUPREMO V3.4! Reparación total del instalador para HyperOS y Xiaomi. 🚀🛡️⚡️"
 }
