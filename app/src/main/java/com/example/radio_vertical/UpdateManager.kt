@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -53,11 +54,26 @@ class UpdateManager(private val context: Context) {
     suspend fun downloadAndInstallApk(info: UpdateInfo, onProgress: (Float) -> Unit) {
         withContext(Dispatchers.IO) {
             try {
+                // PRIMERO: Chequear permiso en Android 8.0+ (Oreo en adelante)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (!context.packageManager.canRequestPackageInstalls()) {
+                        Log.d("UpdateManager", "No tiene permiso de instalación. Pidiendo...")
+                        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                        // Detenemos aquí para que el usuario de permiso y reintente
+                        return@withContext
+                    }
+                }
+
                 val request = Request.Builder().url(info.apkUrl).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@withContext
 
-                    val apkFile = File(context.cacheDir, "update.apk")
+                    // Guardamos en FilesDir para mayor compatibilidad con FileProvider
+                    val apkFile = File(context.filesDir, "update.apk")
                     val body = response.body ?: return@withContext
                     val totalSize = body.contentLength()
                     
@@ -76,6 +92,7 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
+                    Log.d("UpdateManager", "APK descargada en: ${apkFile.absolutePath}")
                     installApk(apkFile)
                 }
             } catch (e: Exception) {
