@@ -6,8 +6,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import androidx.core.content.FileProvider
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -30,7 +30,6 @@ class UpdateManager(private val context: Context) {
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
     
-    // URL maestra en tu GitHub para chequear actualizaciones
     private val UPDATE_URL = "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/update.json"
 
     suspend fun checkForUpdates(currentVersionCode: Int): UpdateInfo? {
@@ -55,7 +54,6 @@ class UpdateManager(private val context: Context) {
 
     suspend fun downloadAndInstallApk(info: UpdateInfo, onProgress: (Float) -> Unit) {
         withContext(Dispatchers.Main) {
-            // CHEQUEO PROACTIVO DE PERMISOS (Android 14 Style)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!context.packageManager.canRequestPackageInstalls()) {
                     Toast.makeText(context, "IAIO: Activa el permiso de instalación para continuar", Toast.LENGTH_LONG).show()
@@ -71,16 +69,13 @@ class UpdateManager(private val context: Context) {
 
         withContext(Dispatchers.IO) {
             try {
-                // Usamos la carpeta de caché interna, la más compatible para instalaciones directas
-                val apkFile = File(context.cacheDir, "update.apk")
+                // Usamos External Files Dir - La zona más compatible para Android 14 / HyperOS
+                val apkFile = File(context.getExternalFilesDir(null), "update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 val request = Request.Builder().url(info.apkUrl).build()
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e("UpdateManager", "Descarga fallida: ${response.code}")
-                        return@withContext
-                    }
+                    if (!response.isSuccessful) return@withContext
 
                     val body = response.body ?: return@withContext
                     val totalSize = body.contentLength()
@@ -100,21 +95,16 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    // Darle permiso de lectura real (Legacy)
-                    apkFile.setReadable(true, false)
+                    Log.d("UpdateManager", "APK descargada: ${apkFile.absolutePath}")
                     
-                    Log.d("UpdateManager", "Descarga completada al 100%. Iniciando fase de instalación...")
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Descarga 100%. Abriendo instalador...", Toast.LENGTH_SHORT).show()
-                        delay(500)
+                        Toast.makeText(context, "¡Lanzando Instalador Maestro! Prepárate...", Toast.LENGTH_SHORT).show()
+                        delay(800)
                         installApk(apkFile)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Fallo crítico en actualización: ${e.message}")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                Log.e("UpdateManager", "Fallo: ${e.message}")
             }
         }
     }
@@ -134,13 +124,10 @@ class UpdateManager(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             
-            // USAR SELECTOR DE APLICACIONES
-            val chooser = Intent.createChooser(intent, "Instalar Actualización IAIO")
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(chooser)
+            context.startActivity(intent)
             
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Error al abrir instalador: ${e.message}")
+            Log.e("UpdateManager", "Error crítico: ${e.message}")
         }
     }
 }
