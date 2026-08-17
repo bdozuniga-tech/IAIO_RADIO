@@ -54,22 +54,23 @@ class UpdateManager(private val context: Context) {
     }
 
     suspend fun downloadAndInstallApk(info: UpdateInfo, onProgress: (Float) -> Unit) {
+        withContext(Dispatchers.Main) {
+            // CHEQUEO PROACTIVO DE PERMISOS (Android 14 Style)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    Toast.makeText(context, "IAIO: Activa el permiso de instalación para continuar", Toast.LENGTH_LONG).show()
+                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    return@withContext
+                }
+            }
+        }
+
         withContext(Dispatchers.IO) {
             try {
-                // PRIMERO: Chequear permiso en Android 8.0+ (Oreo en adelante)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    if (!context.packageManager.canRequestPackageInstalls()) {
-                        Log.d("UpdateManager", "No tiene permiso de instalación. Pidiendo...")
-                        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                            data = Uri.parse("package:${context.packageName}")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                        // Detenemos aquí para que el usuario de permiso y reintente
-                        return@withContext
-                    }
-                }
-
                 // Usamos la carpeta de caché interna, la más compatible para instalaciones directas
                 val apkFile = File(context.cacheDir, "update.apk")
                 if (apkFile.exists()) apkFile.delete()
@@ -104,10 +105,10 @@ class UpdateManager(private val context: Context) {
                     
                     Log.d("UpdateManager", "Descarga completada al 100%. Iniciando fase de instalación...")
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Descarga lista, instalando...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Descarga 100%. Abriendo instalador...", Toast.LENGTH_SHORT).show()
+                        delay(500)
+                        installApk(apkFile)
                     }
-                    delay(800)
-                    installApk(apkFile)
                 }
             } catch (e: Exception) {
                 Log.e("UpdateManager", "Fallo crítico en actualización: ${e.message}")
@@ -130,13 +131,16 @@ class UpdateManager(private val context: Context) {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             
-            Log.d("UpdateManager", "Lanzando instalador de Android...")
-            context.startActivity(intent)
+            // USAR SELECTOR DE APLICACIONES
+            val chooser = Intent.createChooser(intent, "Instalar Actualización IAIO")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
             
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Error al ejecutar el instalador: ${e.message}")
+            Log.e("UpdateManager", "Error al abrir instalador: ${e.message}")
         }
     }
 }
