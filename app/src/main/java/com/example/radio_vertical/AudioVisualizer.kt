@@ -58,17 +58,17 @@ fun SpectrumVisualizer(
                 val el = currentEnergyL.value
                 val er = currentEnergyR.value
                 if (el > 0.001f || er > 0.001f) {
-                    // ATAQUE INSTANTÁNEO (MAC STYLE): Sube al toque, baja con elegancia
-                    smoothL = if (el > smoothL) el else smoothL * 0.7f + el * 0.3f
-                    smoothR = if (er > smoothR) er else smoothR * 0.7f + er * 0.3f
+                    // ATAQUE TOTAL (1:1): Salto instantáneo hacia arriba
+                    smoothL = if (el > smoothL) el else smoothL * 0.5f + el * 0.5f
+                    smoothR = if (er > smoothR) er else smoothR * 0.5f + er * 0.5f
                     if (el > peakL) peakL = el
                     if (er > peakR) peakR = er
                 } else {
-                    smoothL *= 0.82f 
-                    smoothR *= 0.82f
+                    smoothL *= 0.85f 
+                    smoothR *= 0.85f
                 }
-                peakL *= 0.95f
-                peakR *= 0.95f
+                peakL *= 0.94f // Picos más rápidos
+                peakR *= 0.94f
             }
         }
     }
