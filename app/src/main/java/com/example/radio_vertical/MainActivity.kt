@@ -17,35 +17,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.VectorConverter
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -55,19 +34,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -75,9 +42,14 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -133,7 +105,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Radio_verticalTheme {
-                // Background is solid Color.Black
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                     RadioApp(player = mediaController)
                 }
@@ -331,6 +302,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     }
     
     val savedIndex = remember { prefs.getInt("last_station_index", 0) }
+    var visMode by remember { mutableIntStateOf(prefs.getInt("last_vis_mode", 0)) }
     var isAluminumMode by remember { mutableStateOf(prefs.getBoolean("is_aluminum", false)) }
     var isOscillatorMode by remember { mutableStateOf(prefs.getBoolean("is_oscillator", false)) }
 
@@ -364,10 +336,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 @Suppress("DEPRECATION")
                 pInfo.versionCode
             }
-            
-            Log.d("RadioApp", "Checking update: Current Version Code = $currentVersion")
             updateInfo = updateManager.checkForUpdates(currentVersion)
-            Log.d("RadioApp", "Update Info received: $updateInfo")
         } catch (e: Exception) {
             Log.e("RadioApp", "Update check failed: ${e.message}")
         }
@@ -391,15 +360,18 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             historyL.add(now to PlaybackService.currentEnergyL.value)
             historyR.add(now to PlaybackService.currentEnergyR.value)
             
-            // Compensación de latencia hardware (140ms)
             while (historyL.isNotEmpty() && now - historyL.first().first > 140) {
                 delayedEnergyL = historyL.removeAt(0).second
             }
             while (historyR.isNotEmpty() && now - historyR.first().first > 140) {
                 delayedEnergyR = historyR.removeAt(0).second
             }
-            delay(16) // ~60fps sync
+            delay(16)
         }
+    }
+
+    LaunchedEffect(visMode) {
+        prefs.edit().putInt("last_vis_mode", visMode).apply()
     }
 
     LaunchedEffect(pagerState.currentPage) {
@@ -409,10 +381,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     }
 
     LaunchedEffect(isAluminumMode) { prefs.edit().putBoolean("is_aluminum", isAluminumMode).apply() }
-    LaunchedEffect(isOscillatorMode) { 
-        GlobalSettings.isOscillatorMode = isOscillatorMode
-        prefs.edit().putBoolean("is_oscillator", isOscillatorMode).apply() 
-    }
+    // GlobalSettings ya no es necesario aquí ponrque visMode se maneja localmente
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -427,7 +396,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         onDispose { player?.removeListener(listener) }
     }
 
-    // EFECTO DE FRENADO GRADUAL
     LaunchedEffect(isCountdownActive) {
         if (isCountdownActive) {
             val totalSteps = 300
@@ -450,7 +418,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
     }
 
-    // EFECTO DE ARRANQUE GRADUAL (ESTILO TORNAMESA REAL)
     LaunchedEffect(isStartingActive) {
         if (isStartingActive) {
             isCountdownActive = false
@@ -481,7 +448,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val mediaItem = MediaItem.Builder().setUri(station.url).setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtist(station.name).build()).build()
             currentPlayer.setMediaItem(mediaItem)
             currentPlayer.prepare()
-            // Direct start, no arbitrary delay
             currentPlayer.play()
         }
     }
@@ -494,14 +460,9 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 if (currentItem != null) {
                     val displayTitle = metadata.title + "          " 
                     val displayArtist = metadata.artist + "          "
-                    
                     val newMetadata = MediaMetadata.Builder()
-                        .setTitle(displayTitle)
-                        .setArtist(displayArtist)
-                        .setDisplayTitle(displayTitle)
-                        .setArtworkUri(metadata.artworkUrl?.toUri())
-                        .build()
-                    
+                        .setTitle(displayTitle).setArtist(displayArtist).setDisplayTitle(displayTitle)
+                        .setArtworkUri(metadata.artworkUrl?.toUri()).build()
                     currentPlayer.setPlaylistMetadata(newMetadata)
                     val newItem = currentItem.buildUpon().setMediaMetadata(newMetadata).build()
                     currentPlayer.replaceMediaItem(currentPlayer.currentMediaItemIndex, newItem)
@@ -513,7 +474,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     }
 
     var audioQuality by remember { mutableStateOf("Detectando calidad...") }
-
     LaunchedEffect(pagerState.currentPage, isPlayingState) {
         val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
         val station = radioStations[actualIndex]
@@ -548,7 +508,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 isPlaying = isPlayingState, 
                 isCountdownActive = isCountdownActive, 
                 onPauseRequest = { isCountdownActive = true }, 
-                countdownProgress = countdownProgress, 
                 bpm = currentBpm, 
                 realEnergyL = if (isPlayingState || isCountdownActive) delayedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
                 realEnergyR = if (isPlayingState || isCountdownActive) delayedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
@@ -558,181 +517,69 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 player = player, 
                 onScratchStart = { isCountdownActive = false }, 
                 onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
-                onBrakeStart = { isCountdownActive = true },
                 isAluminum = isAluminumMode,
                 onToggleAluminum = { isAluminumMode = !isAluminumMode },
                 onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
+                visMode = visMode,
+                onModeChange = { visMode = it },
                 audioQuality = audioQuality
             )
         }
 
         // LEFT LOCK BUTTON
-        Box(modifier = Modifier
-            .padding(bottom = 48.dp, start = 24.dp)
-            .align(Alignment.BottomStart)
-            .size(64.dp)
-            .scale(if (isLockPressed) 1.25f else 1f)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.5f))
-            .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        isLockPressed = true
-                        vibratePhone(context, 50)
-                        try { awaitRelease() } finally { isLockPressed = false }
-                    },
-                    onTap = { isLocked = !isLocked }
-                )
-            }, 
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.padding(bottom = 48.dp, start = 24.dp).align(Alignment.BottomStart).size(64.dp).scale(if (isLockPressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
+            detectTapGestures(onPress = { isLockPressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isLockPressed = false } }, onTap = { isLocked = !isLocked })
+        }, contentAlignment = Alignment.Center) {
             Canvas(modifier = Modifier.size(28.dp)) {
-                val w = size.width
-                val h = size.height
+                val w = size.width; val h = size.height
                 val lockColor = if (isLocked) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
-                
-                drawRoundRect(
-                    color = lockColor,
-                    topLeft = Offset(0f, h * 0.4f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.6f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
-                )
-                
-                if (isLocked) {
-                    drawArc(
-                        color = lockColor, startAngle = 180f, sweepAngle = 180f, useCenter = false,
-                        topLeft = Offset(w * 0.2f, h * 0.1f), size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                    )
-                } else {
-                    drawArc(
-                        color = lockColor, startAngle = 180f, sweepAngle = 180f, useCenter = false,
-                        topLeft = Offset(w * 0.2f, -h * 0.15f), size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.6f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                    )
-                }
+                drawRoundRect(color = lockColor, topLeft = Offset(0f, h * 0.4f), size = Size(w, h * 0.6f), cornerRadius = CornerRadius(4.dp.toPx()))
+                if (isLocked) drawArc(lockColor, 180f, 180f, false, Offset(w * 0.2f, h * 0.1f), Size(w * 0.6f, h * 0.6f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                else drawArc(lockColor, 180f, 180f, false, Offset(w * 0.2f, -h * 0.15f), Size(w * 0.6f, h * 0.6f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
             }
         }
 
         // RIGHT PAUSE/PLAY BUTTON
-        Box(modifier = Modifier
-            .padding(bottom = 48.dp, end = 24.dp)
-            .align(Alignment.BottomEnd)
-            .size(64.dp)
-            .scale(if (isPausePressed) 1.25f else 1f)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.5f))
-            .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        isPausePressed = true
-                        vibratePhone(context, 50)
-                        try { awaitRelease() } finally { isPausePressed = false }
-                    },
-                    onTap = {
-                        if (isPlayingState) isCountdownActive = true
-                        else isStartingActive = true
-                    }
-                )
-            }, 
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.padding(bottom = 48.dp, end = 24.dp).align(Alignment.BottomEnd).size(64.dp).scale(if (isPausePressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
+            detectTapGestures(onPress = { isPausePressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isPausePressed = false } }, onTap = { if (isPlayingState) isCountdownActive = true else isStartingActive = true })
+        }, contentAlignment = Alignment.Center) {
             Canvas(modifier = Modifier.size(24.dp)) {
-                val w = size.width
-                val h = size.height
+                val w = size.width; val h = size.height
                 val iconColor = if (!isPlayingState) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
-                
-                if (isPlayingState) {
-                    val barW = w * 0.3f
-                    drawRect(iconColor, Offset(0f, 0f), androidx.compose.ui.geometry.Size(barW, h))
-                    drawRect(iconColor, Offset(w - barW, 0f), androidx.compose.ui.geometry.Size(barW, h))
-                } else {
-                    val path = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(0f, 0f)
-                        lineTo(w, h / 2f)
-                        lineTo(0f, h)
-                        close()
-                    }
-                    drawPath(path, iconColor)
-                }
+                if (isPlayingState) { val barW = w * 0.3f; drawRect(iconColor, Offset(0f, 0f), Size(barW, h)); drawRect(iconColor, Offset(w - barW, 0f), Size(barW, h)) }
+                else { val path = Path().apply { moveTo(0f, 0f); lineTo(w, h / 2f); lineTo(0f, h); close() }; drawPath(path, iconColor) }
             }
         }
 
         // CENTER SIGNATURE: * IAIO *
-        Row(
-            modifier = Modifier
-                .padding(bottom = 68.dp)
-                .align(Alignment.BottomCenter)
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitFirstDown()
-                            isShowInfo = true
-                            vibratePhone(context, 20)
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                if (event.changes.any { !it.pressed }) {
-                                    isShowInfo = false
-                                    break
-                                }
-                            }
-                        }
-                    }
-                },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        Row(modifier = Modifier.padding(bottom = 68.dp).align(Alignment.BottomCenter).pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) { awaitFirstDown(); isShowInfo = true; vibratePhone(context, 20); while (true) { val event = awaitPointerEvent(); if (event.changes.any { !it.pressed }) { isShowInfo = false; break } } }
+            }
+        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val pulse = if (currentBpm > 0) 60000 / currentBpm else 800
             val anim = rememberInfiniteTransition(label = "iaioLiveAnim")
-            val iaioLiveAlpha by anim.animateFloat(
-                initialValue = 0.3f, targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha"
-            )
+            val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (isMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
-
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            
-            Text(
-                text = if (isShowInfo) "IAIO RADIO v4.1 (vCode 27) • MEJORAS: Restauración del efecto tornamesa (frenado/arranque gradual) • Activación del Ducking de Audio (baja volumen sutilmente con los mensajes) • bdozuniga@gmail.com..... " else "IAIO",
-                color = if (isMagnetActive) Color.Cyan else Color.White,
-                fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1,
-                modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(
-                    iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)
-                )
-            )
-
+            Text(text = if (isShowInfo) "IAIO RADIO v4.2 (vCode 28) • MEJORAS: Restauración del efecto tornamesa (frenado/arranque gradual) • Activación del Ducking de Audio (baja volumen sutilmente con los mensajes) • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
-        // OTA UPDATE OVERLAY
         updateInfo?.let { info ->
             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
-                Column(
-                    modifier = Modifier.padding(32.dp).background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp)).border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+                Column(modifier = Modifier.padding(32.dp).background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp)).border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "¡MAMBO NUEVO! 🚀", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(8.dp))
                     Text(text = "IAIO ha lanzado la Versión ${info.versionName}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, textAlign = TextAlign.Center)
-                    if (info.releaseNotes.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(text = info.releaseNotes, color = Color.Cyan.copy(alpha = 0.8f), fontSize = 12.sp, textAlign = TextAlign.Center)
-                    }
+                    if (info.releaseNotes.isNotEmpty()) { Spacer(Modifier.height(12.dp)); Text(text = info.releaseNotes, color = Color.Cyan.copy(alpha = 0.8f), fontSize = 12.sp, textAlign = TextAlign.Center) }
                     Spacer(Modifier.height(24.dp))
-                    if (isDownloadingUpdate) {
-                        CircularProgressIndicator(progress = { downloadProgress }, color = Color.Cyan, strokeWidth = 4.dp)
-                        Spacer(Modifier.height(8.dp))
-                        Text(text = "${(downloadProgress * 100).toInt()}%", color = Color.White, fontSize = 12.sp)
-                    } else {
+                    if (isDownloadingUpdate) { CircularProgressIndicator(progress = { downloadProgress }, color = Color.Cyan, strokeWidth = 4.dp); Spacer(Modifier.height(8.dp)); Text(text = "${(downloadProgress * 100).toInt()}%", color = Color.White, fontSize = 12.sp) }
+                    else {
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Text(text = "LUEGO", color = Color.White.copy(alpha = 0.4f), modifier = Modifier.pointerInput(Unit) { detectTapGestures { updateInfo = null } }.padding(8.dp), fontWeight = FontWeight.Bold)
                             Text(text = "ACTUALIZAR", color = Color.Cyan, modifier = Modifier.background(Color.Cyan.copy(alpha = 0.1f), RoundedCornerShape(8.dp)).border(1.dp, Color.Cyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).pointerInput(Unit) {
-                                detectTapGestures {
-                                    isDownloadingUpdate = true
-                                    scope.launch { updateManager.downloadAndInstallApk(info) { downloadProgress = it } }
-                                }
+                                detectTapGestures { isDownloadingUpdate = true; scope.launch { updateManager.downloadAndInstallApk(info) { downloadProgress = it } } }
                             }.padding(horizontal = 16.dp, vertical = 8.dp), fontWeight = FontWeight.Black)
                         }
                     }
@@ -748,26 +595,21 @@ fun DefaultVinyl(referentialUrl: String?, isAluminum: Boolean) {
     val brushColor = if (isAluminum) Color.Black.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.1f)
     val grooveColor = if (isAluminum) Color.Black.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.05f)
     val labelColor = if (isAluminum) Color(0xFFE0E0E0) else Color(0xFF1A1A1A)
-
     Box(modifier = Modifier.size(330.dp).clip(CircleShape).background(bgColor), contentAlignment = Alignment.Center) {
-        if (referentialUrl != null) {
-            AsyncImage(model = referentialUrl, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(0.5f), contentScale = ContentScale.Crop)
-        }
+        if (referentialUrl != null) AsyncImage(model = referentialUrl, contentDescription = null, modifier = Modifier.fillMaxSize().alpha(0.5f), contentScale = ContentScale.Crop)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2
             drawCircle(brush = Brush.sweepGradient(0.0f to brushColor, 0.2f to Color.Transparent, 0.5f to brushColor, 0.7f to Color.Transparent, 1.0f to brushColor), radius = radius)
-            for (i in 1..25) {
-                drawCircle(color = grooveColor, radius = radius * (0.35f + (i / 25f) * 0.65f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.5.dp.toPx()))
-            }
+            for (i in 1..25) drawCircle(color = grooveColor, radius = radius * (0.35f + (i / 25f) * 0.65f), style = Stroke(width = 0.5.dp.toPx()))
             drawCircle(color = labelColor, radius = radius * 0.35f)
-            drawCircle(color = brushColor, radius = radius * 0.35f, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()))
+            drawCircle(color = brushColor, radius = radius * 0.35f, style = Stroke(width = 1.dp.toPx()))
         }
     }
 }
 
 @OptIn(UnstableApi::class)
 @Composable
-fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, countdownProgress: Float, bpm: Int, realEnergyL: Float, realEnergyR: Float, isMagnetActive: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, onBrakeStart: () -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, audioQuality: String) {
+fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, isMagnetActive: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String) {
     val context = LocalContext.current
     var currentRotation by remember { mutableStateOf(0f) }
     var isTouching by remember { mutableStateOf(false) }
@@ -781,10 +623,7 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     else {
                         val delta = (time - lastFrameTimeNanos) / 1_000_000_000f
                         lastFrameTimeNanos = time
-                        if (!isTouching) {
-                            val speed = if (isPlaying) player?.playbackParameters?.speed ?: 1.0f else 0.0f
-                            currentRotation = (currentRotation + 120f * delta * speed) % 360f
-                        }
+                        if (!isTouching) { val speed = if (isPlaying) player?.playbackParameters?.speed ?: 1.0f else 0.0f; currentRotation = (currentRotation + 120f * delta * speed) % 360f }
                     }
                 }
             }
@@ -797,17 +636,11 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                 awaitPointerEventScope {
                     while (true) {
                         awaitFirstDown(requireUnconsumed = false)
-                        if (player?.isPlaying == false) {
-                            val up = waitForUpOrCancellation()
-                            if (up != null) player.play()
-                        } else {
+                        if (player?.isPlaying == false) { val up = waitForUpOrCancellation(); if (up != null) player.play() }
+                        else {
                             while (true) {
                                 val event = awaitPointerEvent()
-                                if (event.changes.count { it.pressed } >= 2) {
-                                    onPauseRequest()
-                                    while (true) { if (awaitPointerEvent().changes.none { it.pressed }) break }
-                                    break
-                                }
+                                if (event.changes.count { it.pressed } >= 2) { onPauseRequest(); while (true) { if (awaitPointerEvent().changes.none { it.pressed }) break }; break }
                                 if (event.changes.none { it.pressed }) break
                             }
                         }
@@ -827,13 +660,11 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                 }
                 Spacer(Modifier.height(16.dp))
                 Text(text = "CANCION : ${title.ifEmpty { "En vivo" }}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 40.dp))
-                if (artist.isNotEmpty()) {
-                    Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
-                }
+                if (artist.isNotEmpty()) Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
             }
             Spacer(modifier = Modifier.height(48.dp))
-            Box(modifier = Modifier.pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) {
-                if (isActive) SpectrumVisualizer(isPlaying, realEnergyL, realEnergyR)
+            Box(modifier = Modifier.pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
+                if (isActive) SpectrumVisualizer(isPlaying = isPlaying, energyL = realEnergyL, energyR = realEnergyR, currentMode = visMode, onModeChange = onModeChange) 
             }
             Spacer(modifier = Modifier.height(36.dp))
             val beatDuration = if (bpm > 0) 60000 / bpm else 500
@@ -843,27 +674,17 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
             val finalScale = beatPulse * energyFactor
             Box(modifier = Modifier.size(360.dp).pointerInput(player) {
                 detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
-                    isTouching = true
-                    var initialAngle = Math.toDegrees(atan2((it.y - 180.dp.toPx()).toDouble(), (it.x - 180.dp.toPx()).toDouble())).toFloat()
-                    var isDragging = false
-                    PlaybackService.stutterProcessor.isScratching = true
+                    isTouching = true; var initialAngle = Math.toDegrees(atan2((it.y - 180.dp.toPx()).toDouble(), (it.x - 180.dp.toPx()).toDouble())).toFloat()
+                    var isDragging = false; PlaybackService.stutterProcessor.isScratching = true
                     try {
                         awaitPointerEventScope {
                             while (true) {
-                                val event = awaitPointerEvent()
-                                vibratePhone(context, 5)
-                                if (event.changes.count { it.pressed } >= 2) { isTouching = false; isDragging = false; PlaybackService.stutterProcessor.isScratching = false; onBrakeStart(); break }
-                                val pointer = event.changes.firstOrNull { it.pressed }
+                                val event = awaitPointerEvent(); vibratePhone(context, 5); val pointer = event.changes.firstOrNull { it.pressed }
                                 if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
                                 val currentAngle = Math.toDegrees(atan2((pointer.position.y - 180.dp.toPx()).toDouble(), (pointer.position.x - 180.dp.toPx()).toDouble())).toFloat()
                                 var delta = currentAngle - initialAngle
                                 if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
-                                if (Math.abs(delta) > 0.5f || isDragging) {
-                                    if (!isDragging) { isDragging = true; onScratchStart() }
-                                    currentRotation = (currentRotation + delta) % 360f
-                                    PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f)
-                                    initialAngle = currentAngle
-                                }
+                                if (Math.abs(delta) > 0.5f || isDragging) { if (!isDragging) { isDragging = true; onScratchStart() }; currentRotation = (currentRotation + delta) % 360f; PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f); initialAngle = currentAngle }
                             }
                         }
                     } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
@@ -876,8 +697,8 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                         SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
                     }
                     Canvas(Modifier.size(328.dp)) {
-                        drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
-                        drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                        drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
+                        drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
                     }
                 }
                 Box(modifier = Modifier.size(10.dp).scale(if (isPlaying) finalScale else 1f).clip(CircleShape).background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))

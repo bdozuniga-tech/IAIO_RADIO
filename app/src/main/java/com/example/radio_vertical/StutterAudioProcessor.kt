@@ -58,6 +58,7 @@ class StutterAudioProcessor : BaseAudioProcessor() {
     val bpmFlow = MutableStateFlow(0)
     val energyPeakLFlow = MutableStateFlow(0f)
     val energyPeakRFlow = MutableStateFlow(0f)
+    val waveformFlow = MutableStateFlow(FloatArray(128) { 0f })
     
     private var energySumL = 0f
     private var energySumR = 0f
@@ -313,6 +314,18 @@ class StutterAudioProcessor : BaseAudioProcessor() {
         // Esto permite que el movimiento sea fluido y no se quede pegado arriba
         energyPeakLFlow.value = (maxL / visualPeakL.coerceAtLeast(minDivisor)).coerceIn(0f, 1.0f)
         energyPeakRFlow.value = (maxR / visualPeakR.coerceAtLeast(minDivisor)).coerceIn(0f, 1.0f)
+
+        // Waveform para Osciloscopio
+        val waveform = FloatArray(128)
+        val shortsView = buffer.asShortBuffer()
+        val step = (shortsView.remaining() / (128 * channels)).coerceAtLeast(1)
+        for (i in 0 until 128) {
+            if (shortsView.hasRemaining()) {
+                waveform[i] = shortsView.get().toFloat() / 32768f
+                for (s_idx in 1 until step) if (shortsView.hasRemaining()) shortsView.get()
+            }
+        }
+        waveformFlow.value = waveform
         
         magnetActiveFlow.value = peakDetected && isCalibratedFlow.value
     }

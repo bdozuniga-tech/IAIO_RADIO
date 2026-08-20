@@ -65,6 +65,7 @@ class PlaybackService : MediaSessionService() {
         val isMagnetActive: StateFlow<Boolean> = stutterProcessor.magnetActiveFlow
         val isCalibrated: StateFlow<Boolean> = stutterProcessor.isCalibratedFlow
         val calibrationCountdown: StateFlow<Int> = stutterProcessor.calibrationCountdownFlow
+        val currentWaveform: StateFlow<FloatArray> = stutterProcessor.waveformFlow
     }
 
     override fun onCreate() {
