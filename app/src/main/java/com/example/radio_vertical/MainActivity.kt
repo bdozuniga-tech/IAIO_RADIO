@@ -351,7 +351,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val isCalibrated by PlaybackService.isCalibrated.collectAsState()
     val calibrationCountdown by PlaybackService.calibrationCountdown.collectAsState()
 
-    // Sistema de Buffer para sincronizar visuales con el audio real de los parlantes (ROBUST SYNC)
+    // Sistema de Buffer para sincronizar visuales con el audio real (SYNC CALIBRADO MAC-STYLE)
     LaunchedEffect(Unit) {
         val historyL = mutableListOf<Pair<Long, Float>>()
         val historyR = mutableListOf<Pair<Long, Float>>()
@@ -360,13 +360,15 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             historyL.add(now to PlaybackService.currentEnergyL.value)
             historyR.add(now to PlaybackService.currentEnergyR.value)
             
-            while (historyL.isNotEmpty() && now - historyL.first().first > 140) {
+            // Ajustamos a 100ms: La latencia de audio en Poco X5 Pro es más baja que el promedio
+            // Esto hará que el visual golpee justo con el "punch" del parlante
+            while (historyL.isNotEmpty() && now - historyL.first().first > 100) {
                 delayedEnergyL = historyL.removeAt(0).second
             }
-            while (historyR.isNotEmpty() && now - historyR.first().first > 140) {
+            while (historyR.isNotEmpty() && now - historyR.first().first > 100) {
                 delayedEnergyR = historyR.removeAt(0).second
             }
-            delay(16)
+            delay(8) // Muestreo doble (120Hz) para suavidad extrema
         }
     }
 

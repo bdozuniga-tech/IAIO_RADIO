@@ -58,17 +58,17 @@ fun SpectrumVisualizer(
                 val el = currentEnergyL.value
                 val er = currentEnergyR.value
                 if (el > 0.001f || er > 0.001f) {
-                    // RESPUESTA STUDIO: Suavizado ultra ligero para máxima velocidad
-                    smoothL = smoothL * 0.6f + el * 0.4f
-                    smoothR = smoothR * 0.6f + er * 0.4f
+                    // ATAQUE INSTANTÁNEO (MAC STYLE): Sube al toque, baja con elegancia
+                    smoothL = if (el > smoothL) el else smoothL * 0.7f + el * 0.3f
+                    smoothR = if (er > smoothR) er else smoothR * 0.7f + er * 0.3f
                     if (el > peakL) peakL = el
                     if (er > peakR) peakR = er
                 } else {
-                    smoothL *= 0.75f 
-                    smoothR *= 0.75f
+                    smoothL *= 0.82f 
+                    smoothR *= 0.82f
                 }
-                peakL *= 0.96f
-                peakR *= 0.96f
+                peakL *= 0.95f
+                peakR *= 0.95f
             }
         }
     }
