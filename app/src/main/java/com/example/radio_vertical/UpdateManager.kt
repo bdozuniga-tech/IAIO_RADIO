@@ -35,20 +35,15 @@ class UpdateManager(private val context: Context) {
     suspend fun checkForUpdates(currentVersionCode: Int): UpdateInfo? {
         return withContext(Dispatchers.IO) {
             try {
-                // Truco para evitar el cache de GitHub Raw (Query param aleatorio)
                 val nocacheUrl = "$UPDATE_URL?t=${System.currentTimeMillis()}"
                 val request = Request.Builder().url(nocacheUrl).build()
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: return@withContext null
-                        Log.d("UpdateManager", "Body received: $body")
                         val info = json.decodeFromString<UpdateInfo>(body)
-                        Log.d("UpdateManager", "GitHub Version: ${info.versionCode}, Local: $currentVersionCode")
                         if (info.versionCode > currentVersionCode) {
                             return@withContext info
                         }
-                    } else {
-                        Log.e("UpdateManager", "Server error: ${response.code}")
                     }
                 }
             } catch (e: Exception) {
@@ -75,7 +70,7 @@ class UpdateManager(private val context: Context) {
 
         withContext(Dispatchers.IO) {
             try {
-                // Usamos External Files Dir - La zona más compatible para Android 14 / HyperOS
+                // USAMOS EXTERNAL FILES DIR - El lugar infalible para Android 14 y Xiaomi
                 val apkFile = File(context.getExternalFilesDir(null), "update.apk")
                 if (apkFile.exists()) apkFile.delete()
 
@@ -101,16 +96,19 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                     
-                    Log.d("UpdateManager", "APK descargada: ${apkFile.absolutePath}")
+                    // FORZAR PERMISOS DE LECTURA (PARA EL INSTALADOR DEL SISTEMA)
+                    apkFile.setReadable(true, false)
+                    
+                    Log.d("UpdateManager", "APK lista para instalación forzada: ${apkFile.absolutePath}")
                     
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, "¡Lanzando Instalador Maestro! Prepárate...", Toast.LENGTH_SHORT).show()
-                        delay(800)
+                        delay(1000)
                         installApk(apkFile)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Fallo: ${e.message}")
+                Log.e("UpdateManager", "Fallo crítico: ${e.message}")
             }
         }
     }
@@ -123,17 +121,22 @@ class UpdateManager(private val context: Context) {
                 file
             )
 
+            // INTENT AGRESIVO CON SELECTOR (BYPASS HYPEROS)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                // Truco extra para Xiaomi
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
             
-            context.startActivity(intent)
+            val chooser = Intent.createChooser(intent, "Instalar Actualización IAIO")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
             
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Error crítico: ${e.message}")
+            Log.e("UpdateManager", "Error al abrir instalador: ${e.message}")
         }
     }
 }
