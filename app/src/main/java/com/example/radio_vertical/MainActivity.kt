@@ -342,6 +342,32 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
     }
 
+    // SINCRONIZACIÓN DE NAVEGACIÓN BLUETOOTH (AVRCP NEXT/PREVIOUS)
+    LaunchedEffect(player) {
+        PlaybackService.navEvent.collect { direction ->
+            val totalStations = radioStations.size
+            if (totalStations == 0) return@collect
+            
+            val currentPage = pagerState.currentPage
+            val targetPage = currentPage + direction
+            
+            // Logica de limites (opcional si es infinito, pero solicitada)
+            // En un pager de Int.MAX_VALUE, el "inicio" absoluto es 0.
+            // Pero el usuario se refiere a la primera/última estación de la lista.
+            
+            val currentActualIndex = ((currentPage % totalStations) + totalStations) % totalStations
+            
+            // Si el usuario quiere limites estrictos y no circularidad:
+            if (direction > 0 && currentActualIndex == totalStations - 1) {
+                Log.d("RadioApp", "Límite superior alcanzado. Ignorando NEXT.")
+            } else if (direction < 0 && currentActualIndex == 0) {
+                Log.d("RadioApp", "Límite inferior alcanzado. Ignorando PREVIOUS.")
+            } else {
+                pagerState.animateScrollToPage(targetPage)
+            }
+        }
+    }
+
     // SINCRONIZACIÓN DE AUDIO Y VISUALES (Compensación de Latencia de 140ms)
     var delayedEnergyL by remember { mutableFloatStateOf(0f) }
     var delayedEnergyR by remember { mutableFloatStateOf(0f) }
@@ -563,7 +589,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (isMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v6.0 (vCode 70) • MEJORAS: Sincronización Real Extrema (2ms) • Respuesta Eléctrica 1:1 • 20 Modos con Memoria Indestructible • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v6.1 (vCode 71) • MEJORAS: Control Bluetooth AVRCP (Next/Prev) • Sincronización Real Extrema (2ms) • Respuesta Eléctrica 1:1 • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 

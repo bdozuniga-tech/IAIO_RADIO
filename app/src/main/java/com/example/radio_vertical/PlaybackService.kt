@@ -21,8 +21,18 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -30,6 +40,43 @@ class PlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    private val mediaSessionCallback = object : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                .add(Player.COMMAND_SEEK_TO_NEXT)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                .setAvailablePlayerCommands(playerCommands)
+                .build()
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int
+        ): Int {
+            when (playerCommand) {
+                Player.COMMAND_SEEK_TO_NEXT -> {
+                    Log.d("PlaybackService", "Comando NEXT recibido desde Bluetooth/MediaSession")
+                    serviceScope.launch { _navEvent.emit(1) }
+                    return SessionResult.RESULT_SUCCESS
+                }
+                Player.COMMAND_SEEK_TO_PREVIOUS -> {
+                    Log.d("PlaybackService", "Comando PREVIOUS recibido desde Bluetooth/MediaSession")
+                    serviceScope.launch { _navEvent.emit(-1) }
+                    return SessionResult.RESULT_SUCCESS
+                }
+            }
+            return super.onPlayerCommandRequest(session, controller, playerCommand)
+        }
+    }
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
@@ -54,6 +101,9 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        private val _navEvent = MutableSharedFlow<Int>()
+        val navEvent: SharedFlow<Int> = _navEvent
+
         private val _audioSessionId = MutableStateFlow(0)
         val audioSessionId: StateFlow<Int> = _audioSessionId
 
@@ -129,6 +179,7 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, player!!)
             .setSessionActivity(pendingIntent)
+            .setCallback(mediaSessionCallback)
             .build()
     }
 
