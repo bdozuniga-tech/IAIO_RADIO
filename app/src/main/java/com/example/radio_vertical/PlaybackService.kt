@@ -142,6 +142,14 @@ class PlaybackService : MediaSessionService() {
             .setReadTimeoutMs(15000)
         
         val dataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
+        
+        // Force HLS class loading check
+        try {
+            Class.forName("androidx.media3.exoplayer.hls.HlsMediaSource\$Factory")
+            Log.d("PlaybackService", "HLS Factory detectada correctamente.")
+        } catch (e: Exception) {
+            Log.e("PlaybackService", "HLS Factory NO detectada: ${e.message}")
+        }
 
         player = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))

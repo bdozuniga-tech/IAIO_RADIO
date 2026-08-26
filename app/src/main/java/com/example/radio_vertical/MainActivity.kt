@@ -65,6 +65,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -157,8 +158,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("ia_radio_prefs", Context.MODE_PRIVATE) }
     
-    val radioStations = remember {
-        listOf(
+    val radioStations = listOf(
             RadioStation("LIMBIK FRECUENCIES", "https://limbikfreq.com/listen/limbik_frequencies/128.mp3", Color.Black, "https://limbikfreq.com/static/uploads/limbik_frequencies/logo.png", "https://limbikfreq.com/api/nowplaying/limbik_frequencies", "limbik_frequencies"),
             RadioStation("ISEKOI RADIO", "https://public.isekoi-radio.com/listen/isekoi/radio.mp3", Color.Black, "https://public.isekoi-radio.com/static/uploads/isekoi/logo.png", "https://public.isekoi-radio.com/api/nowplaying/isekoi", "isekoi"),
             RadioStation(
@@ -227,17 +227,17 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             ),
             RadioStation(
                 name = "SONAR FM",
-                url = "https://mdstrm.com/audio/5c915724519bce27671c4d15/icecast.audio",
+                url = "https://mdstrm.com/audio/5c915724519bce27671c4d15/live.m3u8",
                 backgroundColor = Color.Black,
                 logoUrl = "https://myradioonline.cl/public/uploads/radio_img/sonar-fm/play_250_250.webp",
-                apiUrl = "https://api.rdfmedia.cl/nowplaying/sonar"
+                apiUrl = "https://rds.canal13.cl/nowplaying/sonarfm.json"
             ),
             RadioStation(
                 name = "PLAY FM",
-                url = "https://mdstrm.com/audio/5bc8a1b55217570ad255b481/live.m3u8",
+                url = "https://mdstrm.com/audio/5c8d6406f98fbf269f57c82c/live.m3u8",
                 backgroundColor = Color(0xFFFA264D),
                 logoUrl = "https://ott-assets.mdstrm.com/5c58a34e176c2c0813b22e4b/633db501b938191960de607d/assets/LOGOPLAY04.png",
-                apiUrl = "https://api.rdfmedia.cl/nowplaying/playfm"
+                apiUrl = "https://rds.canal13.cl/nowplaying/playfm.json"
             ),
             RadioStation(
                 name = "90s90s ROCK",
@@ -306,7 +306,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 logoUrl = "https://underground.fm/wp-content/uploads/2021/01/undgrnd-logo-clear2.png"
             )
         )
-    }
     
     val savedIndex = remember { prefs.getInt("last_station_index", 0) }
     var visMode by remember { mutableIntStateOf(prefs.getInt("last_vis_mode", 0)) }
@@ -422,8 +421,21 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             override fun onIsPlayingChanged(isPlaying: Boolean) { 
                 isPlayingState = isPlaying 
                 if (!isPlaying) isStartingActive = false
+                Log.d("RadioApp", "Playback state: $isPlaying")
             }
-            override fun onPlayerError(error: PlaybackException) { Log.e("RadioApp", "Player Error: ${error.message}") }
+            override fun onPlayerError(error: PlaybackException) { 
+                Log.e("RadioApp", "Player Error: ${error.message}", error)
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                val stateName = when(state) {
+                    Player.STATE_IDLE -> "IDLE"
+                    Player.STATE_BUFFERING -> "BUFFERING"
+                    Player.STATE_READY -> "READY"
+                    Player.STATE_ENDED -> "ENDED"
+                    else -> "UNKNOWN"
+                }
+                Log.d("RadioApp", "ExoPlayer State: $stateName")
+            }
         }
         player?.addListener(listener)
         isPlayingState = player?.isPlaying ?: false
@@ -473,13 +485,23 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         val currentPlayer = player ?: return@LaunchedEffect
         val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
         val station = radioStations[actualIndex]
+        Log.e("RadioApp", "VER: 6.5-LOCAL - Selected: ${station.name} - API: ${station.apiUrl}")
         radioViewModel.startPolling(station.apiUrl, station.shortcode, station.name)
         val currentUri = currentPlayer.currentMediaItem?.localConfiguration?.uri?.toString()
         if (currentUri == station.url && currentPlayer.playbackState != Player.STATE_IDLE) return@LaunchedEffect
         currentPlayer.stop()
         currentPlayer.clearMediaItems()
         if (station.url.isNotEmpty()) {
-            val mediaItem = MediaItem.Builder().setUri(station.url).setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtist(station.name).build()).build()
+            val mimeType = if (station.url.contains("m3u8")) MimeTypes.APPLICATION_M3U8 else null
+            val mediaItem = MediaItem.Builder()
+                .setUri(station.url)
+                .setMimeType(mimeType)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(station.name)
+                        .setArtist(station.name)
+                        .build()
+                ).build()
             currentPlayer.setMediaItem(mediaItem)
             currentPlayer.prepare()
             currentPlayer.play()
@@ -535,7 +557,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val station = radioStations[actualIndex]
             RadioScreen(
                 station = station, 
-                title = if (pagerState.currentPage == page) metadata.title else "Cargando...", 
+                title = if (pagerState.currentPage == page) metadata.title else "Cargando v6.4...", 
                 artist = if (pagerState.currentPage == page) metadata.artist else station.name, 
                 artworkUrl = if (pagerState.currentPage == page) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
                 isActive = pagerState.currentPage == page, 

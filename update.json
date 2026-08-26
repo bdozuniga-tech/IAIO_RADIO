@@ -1,6 +1,6 @@
 {
-  "versionCode": 73,
-  "versionName": "6.3 Play FM Fixed",
+  "versionCode": 78,
+  "versionName": "6.8 Final Play FM Fix",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 6.3! 🚀 Corregido problema con PLAY FM. Ahora soporta streaming HLS nativo. ¡Actualiza para escuchar el pop! ⚡️💎🏆"
+  "releaseNotes": "¡VERSIÓN 6.8! 🚀 Estabilidad total para PLAY FM. Ahora con streaming HLS y metadatos sincronizados desde el servidor oficial de Canal 13. ¡Disfruta la música! ⚡️🎧🏆"
 }

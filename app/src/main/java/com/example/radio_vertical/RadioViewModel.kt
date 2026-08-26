@@ -64,6 +64,7 @@ data class UzicResponse(
 data class PrisaResponse(
     val now_playing: PrisaNowPlaying? = null,
     val nowPlaying: PrisaNowPlaying? = null,
+    val current: PrisaNowPlaying? = null,
     val data: RDFData? = null
 )
 
@@ -95,7 +96,8 @@ data class PrisaNowPlaying(
     val image: String? = null,
     val cover: String? = null,
     val cover_url: String? = null,
-    val data: MediastreamData? = null
+    val data: MediastreamData? = null,
+    val track: MediastreamData? = null
 )
 
 @Serializable
@@ -213,25 +215,34 @@ class RadioViewModel : ViewModel() {
     }
 
     private suspend fun fetchMetadata(url: String, shortcode: String?, stationName: String) {
+        var currentUrl = url
         try {
-            val request = Request.Builder()
-                .url(url)
+            val requestBuilder = Request.Builder()
+                .url(currentUrl)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
                 .header("Accept", "application/json, text/plain, */*")
-                .header("Referer", "https://sonarfm.cl/")
-                .header("Origin", "https://sonarfm.cl")
-                .build()
+            
+            if (currentUrl.contains("sonarfm.cl") || stationName.contains("SONAR", ignoreCase = true)) {
+                requestBuilder.header("Referer", "https://sonarfm.cl/")
+                requestBuilder.header("Origin", "https://sonarfm.cl")
+            } else if (currentUrl.contains("playfm.cl") || stationName.contains("PLAY", ignoreCase = true)) {
+                requestBuilder.header("Referer", "https://playfm.cl/")
+                requestBuilder.header("Origin", "https://playfm.cl")
+            }
+
+            val request = requestBuilder.build()
                 
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: ""
-                Log.d("RadioVM", "URL: $url")
-                Log.d("RadioVM", "Full Body: $body")
+                Log.d("RadioVM", "Fetching metadata from: $currentUrl")
+                Log.d("RadioVM", "Response code: ${response.code}")
+                Log.d("RadioVM", "Response Body: $body")
                 
                 if (response.isSuccessful && body.isNotEmpty()) {
                     withContext(Dispatchers.Default) {
                         try {
                             when {
-                                url.contains("1.fm") -> {
+                                currentUrl.contains("1.fm") -> {
                                     val parsed = json.decodeFromString<OneFMResponse>(body)
                                     val img = parsed.largeImage ?: parsed.largeImageUpper ?: parsed.imageUrl ?: parsed.imageUpper ?: parsed.imageLower
                                     val finalImg = if (!img.isNullOrBlank() && !img.startsWith("http")) {
@@ -243,19 +254,19 @@ class RadioViewModel : ViewModel() {
                                     val parsed = json.decodeFromString<UzicResponse>(body)
                                     updateUI(parsed.title, parsed.artist, parsed.artwork ?: parsed.image ?: parsed.img, stationName)
                                 }
-                                url.contains("prisamedia") || url.contains("prisaradio") || url.contains("mdstrm") || url.contains("rdfmedia") || url.contains("sonarfm.cl") || url.contains("onlineradio.cl") -> {
+                                url.contains("prisamedia") || url.contains("prisaradio") || url.contains("mdstrm") || url.contains("rdfmedia") || url.contains("sonarfm.cl") || url.contains("onlineradio.cl") || url.contains("emisorpodcasting.com") || url.contains("metadata.mdstrm.com") -> {
                                     Log.d("RadioVM", "Parsing RDF/Mediastream/OnlineRadio metadata: $body")
                                     
                                     // 1. Intentar como objeto envuelto (Estructura RDF/Mediastream Pro)
                                     try {
                                         val wrapped = json.decodeFromString<PrisaResponse>(body)
-                                        val np = wrapped.nowPlaying ?: wrapped.now_playing ?: 
+                                        val np = wrapped.current ?: wrapped.nowPlaying ?: wrapped.now_playing ?: 
                                                  wrapped.data?.now_playing ?: wrapped.data?.nowplaying ?: wrapped.data?.now
                                         
                                         if (np != null) {
-                                            val title = np.title ?: np.song ?: np.song_name ?: np.data?.title
-                                            val artist = np.artist ?: np.artist_name ?: np.data?.artist
-                                            val art = np.artwork ?: np.artworkUrl ?: np.image ?: np.cover ?: np.cover_url ?: np.data?.image
+                                            val title = np.title ?: np.song ?: np.song_name ?: np.data?.title ?: np.track?.title
+                                            val artist = np.artist ?: np.artist_name ?: np.data?.artist ?: np.track?.artist
+                                            val art = np.artwork ?: np.artworkUrl ?: np.image ?: np.cover ?: np.cover_url ?: np.data?.image ?: np.track?.image
                                             if (title != null || artist != null) {
                                                 updateUI(title, artist, art, stationName)
                                                 return@withContext
@@ -359,10 +370,10 @@ class RadioViewModel : ViewModel() {
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.e("RadioVM", "Parse Error: ${e.message}")
+                            Log.e("RadioVM", "Parse Error for $url: ${e.message}", e)
                             // Intentar una extracción manual simple si falla el JSON
-                            if (body.contains("title") && body.contains("artist")) {
-                                Log.d("RadioVM", "Trying manual extraction...")
+                            if (body.contains("title") || body.contains("artist") || body.contains("song")) {
+                                Log.d("RadioVM", "Trying manual extraction for $url...")
                             }
                             updateUI(null, null, null, stationName)
                         }

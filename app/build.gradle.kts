@@ -9,11 +9,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.radio_vertical"
+        applicationId = "com.example.radio_metadata_final"
         minSdk = 24
         targetSdk = 36
-        versionCode = 73
-        versionName = "6.3"
+        versionCode = 78
+        versionName = "6.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -48,7 +48,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.session)
