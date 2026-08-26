@@ -1,6 +1,6 @@
 {
-  "versionCode": 72,
-  "versionName": "6.2 PLAY FM Added",
+  "versionCode": 73,
+  "versionName": "6.3 Play FM Fixed",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 6.2! 🚀 Hemos añadido PLAY FM a la lista de estaciones. Disfruta de la mejor música pop. ¡Actualiza ahora! ⚡️💎🏆"
+  "releaseNotes": "¡VERSIÓN 6.3! 🚀 Corregido problema con PLAY FM. Ahora soporta streaming HLS nativo. ¡Actualiza para escuchar el pop! ⚡️💎🏆"
 }
