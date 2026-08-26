@@ -233,6 +233,13 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 apiUrl = "https://api.rdfmedia.cl/nowplaying/sonar"
             ),
             RadioStation(
+                name = "PLAY FM",
+                url = "https://mdstrm.com/audio/5bc8a1b55217570ad255b481/live.m3u8",
+                backgroundColor = Color(0xFFFA264D),
+                logoUrl = "https://ott-assets.mdstrm.com/5c58a34e176c2c0813b22e4b/633db501b938191960de607d/assets/LOGOPLAY04.png",
+                apiUrl = "https://api.rdfmedia.cl/nowplaying/playfm"
+            ),
+            RadioStation(
                 name = "90s90s ROCK",
                 url = "https://regiocast.streamabc.net/regc-90s90srock1436287-mp3-192-2191420?sABC=671rr92q%231%23730168p5ron6405p8q8817q3rrs5o615%23ubzrcntr&mode=preroll&aw_0_1st.skey=1730078977&cb=863839065&listenerid=730168c5eba6405c8d8817d3eef5b615&aw_0_1st.playerid=homepage&amsparams=playerid:homepage;skey:1730079021",
                 backgroundColor = Color.Black,
@@ -589,7 +596,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (isMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v6.1 (vCode 71) • MEJORAS: Control Bluetooth AVRCP (Next/Prev) • Sincronización Real Extrema (2ms) • Respuesta Eléctrica 1:1 • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v6.2 (vCode 72) • MEJORAS: Nueva estación PLAY FM • Control Bluetooth AVRCP (Next/Prev) • Sincronización Real Extrema (2ms) • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
