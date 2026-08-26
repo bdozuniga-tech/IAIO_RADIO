@@ -9,7 +9,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.radio_metadata_final"
+        applicationId = "com.example.radio_vertical"
         minSdk = 24
         targetSdk = 36
         versionCode = 78

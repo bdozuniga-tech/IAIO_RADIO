@@ -254,7 +254,7 @@ class RadioViewModel : ViewModel() {
                                     val parsed = json.decodeFromString<UzicResponse>(body)
                                     updateUI(parsed.title, parsed.artist, parsed.artwork ?: parsed.image ?: parsed.img, stationName)
                                 }
-                                url.contains("prisamedia") || url.contains("prisaradio") || url.contains("mdstrm") || url.contains("rdfmedia") || url.contains("sonarfm.cl") || url.contains("onlineradio.cl") || url.contains("emisorpodcasting.com") || url.contains("metadata.mdstrm.com") -> {
+                                url.contains("prisamedia") || url.contains("prisaradio") || url.contains("mdstrm") || url.contains("rdfmedia") || url.contains("sonarfm.cl") || url.contains("onlineradio.cl") || url.contains("emisorpodcasting.com") || url.contains("metadata.mdstrm.com") || url.contains("canal13.cl") -> {
                                     Log.d("RadioVM", "Parsing RDF/Mediastream/OnlineRadio metadata: $body")
                                     
                                     // 1. Intentar como objeto envuelto (Estructura RDF/Mediastream Pro)
