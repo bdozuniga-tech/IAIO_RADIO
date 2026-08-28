@@ -8,9 +8,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.common.Player
+import androidx.media3.common.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -41,6 +39,18 @@ class PlaybackService : MediaSessionService() {
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var lastNavTime = 0L
+
+    private fun emitNavEvent(direction: Int) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastNavTime > 500) { // Ignorar si el comando llega antes de 500ms (evita el doble salto)
+            lastNavTime = currentTime
+            Log.d("PlaybackService", "Emitiendo navegación: $direction")
+            serviceScope.launch { _navEvent.emit(direction) }
+        } else {
+            Log.d("PlaybackService", "Comando Bluetooth duplicado ignorado (Debounce)")
+        }
+    }
 
     private val mediaSessionCallback = object : MediaSession.Callback {
         override fun onConnect(
@@ -50,27 +60,28 @@ class PlaybackService : MediaSessionService() {
             val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
                 .add(Player.COMMAND_SEEK_TO_NEXT)
                 .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(playerCommands)
                 .build()
         }
 
-        @Deprecated("Deprecated in Java")
         override fun onPlayerCommandRequest(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
             playerCommand: Int
         ): Int {
             when (playerCommand) {
-                Player.COMMAND_SEEK_TO_NEXT -> {
-                    Log.d("PlaybackService", "Comando NEXT recibido desde Bluetooth/MediaSession")
-                    serviceScope.launch { _navEvent.emit(1) }
+                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
+                    Log.d("PlaybackService", "Comando NEXT recibido desde Session Callback")
+                    emitNavEvent(1)
                     return SessionResult.RESULT_SUCCESS
                 }
-                Player.COMMAND_SEEK_TO_PREVIOUS -> {
-                    Log.d("PlaybackService", "Comando PREVIOUS recibido desde Bluetooth/MediaSession")
-                    serviceScope.launch { _navEvent.emit(-1) }
+                Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                    Log.d("PlaybackService", "Comando PREVIOUS recibido desde Session Callback")
+                    emitNavEvent(-1)
                     return SessionResult.RESULT_SUCCESS
                 }
             }
@@ -185,7 +196,39 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mediaSession = MediaSession.Builder(this, player!!)
+        // Usamos un ForwardingPlayer para interceptar comandos de Bluetooth de forma más robusta
+        val forwardingPlayer = object : ForwardingPlayer(player!!) {
+            override fun getAvailableCommands(): Player.Commands {
+                return super.getAvailableCommands().buildUpon()
+                    .add(COMMAND_SEEK_TO_NEXT)
+                    .add(COMMAND_SEEK_TO_PREVIOUS)
+                    .add(COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .build()
+            }
+
+            override fun seekToNext() {
+                Log.d("PlaybackService", "seekToNext interceptado")
+                emitNavEvent(1)
+            }
+
+            override fun seekToPrevious() {
+                Log.d("PlaybackService", "seekToPrevious interceptado")
+                emitNavEvent(-1)
+            }
+
+            override fun seekToNextMediaItem() {
+                Log.d("PlaybackService", "seekToNextMediaItem interceptado")
+                emitNavEvent(1)
+            }
+
+            override fun seekToPreviousMediaItem() {
+                Log.d("PlaybackService", "seekToPreviousMediaItem interceptado")
+                emitNavEvent(-1)
+            }
+        }
+
+        mediaSession = MediaSession.Builder(this, forwardingPlayer)
             .setSessionActivity(pendingIntent)
             .setCallback(mediaSessionCallback)
             .build()

@@ -351,25 +351,11 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     // SINCRONIZACIÓN DE NAVEGACIÓN BLUETOOTH (AVRCP NEXT/PREVIOUS)
     LaunchedEffect(player) {
         PlaybackService.navEvent.collect { direction ->
+            Log.d("RadioApp", "Bluetooth Nav Event: $direction")
             val totalStations = radioStations.size
-            if (totalStations == 0) return@collect
-            
-            val currentPage = pagerState.currentPage
-            val targetPage = currentPage + direction
-            
-            // Logica de limites (opcional si es infinito, pero solicitada)
-            // En un pager de Int.MAX_VALUE, el "inicio" absoluto es 0.
-            // Pero el usuario se refiere a la primera/última estación de la lista.
-            
-            val currentActualIndex = ((currentPage % totalStations) + totalStations) % totalStations
-            
-            // Si el usuario quiere limites estrictos y no circularidad:
-            if (direction > 0 && currentActualIndex == totalStations - 1) {
-                Log.d("RadioApp", "Límite superior alcanzado. Ignorando NEXT.")
-            } else if (direction < 0 && currentActualIndex == 0) {
-                Log.d("RadioApp", "Límite inferior alcanzado. Ignorando PREVIOUS.")
-            } else {
-                pagerState.animateScrollToPage(targetPage)
+            if (totalStations > 0) {
+                // Permitimos scroll infinito circular
+                pagerState.animateScrollToPage(pagerState.currentPage + direction)
             }
         }
     }

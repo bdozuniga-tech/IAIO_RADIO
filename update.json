@@ -1,6 +1,6 @@
 {
-  "versionCode": 78,
-  "versionName": "6.8 Final Play FM Fix",
+  "versionCode": 79,
+  "versionName": "6.9 Bluetooth Car Fix",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 6.8! 🚀 Estabilidad total para PLAY FM. Ahora con streaming HLS y metadatos sincronizados desde el servidor oficial de Canal 13. ¡Disfruta la música! ⚡️🎧🏆"
+  "releaseNotes": "¡VERSIÓN 6.9! 🚗 Corregido el error de 'doble salto' al usar los botones del auto o volante por Bluetooth. ¡Navegación más fluida y precisa! ⚡️🎧🏆"
 }
