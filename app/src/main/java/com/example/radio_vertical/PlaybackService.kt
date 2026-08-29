@@ -17,15 +17,19 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,13 +37,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 @UnstableApi
-class PlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+class PlaybackService : MediaLibraryService() {
+    private var mediaLibrarySession: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var lastNavTime = 0L
+    private var isReconnecting = false
+
+    private fun startReconnectionRoutine() {
+        if (isReconnecting) return
+        isReconnecting = true
+        serviceScope.launch {
+            while (isReconnecting) {
+                Log.d("PlaybackService", "Anti-Túnel: Intentando reconectar...")
+                player?.let { p ->
+                    if (p.playbackState == Player.STATE_IDLE || p.playerError != null) {
+                        p.prepare()
+                        p.play()
+                    }
+                }
+                delay(5000) // Reintentar cada 5 segundos
+            }
+        }
+    }
 
     private fun emitNavEvent(direction: Int) {
         val currentTime = System.currentTimeMillis()
@@ -77,7 +99,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private val mediaSessionCallback = object : MediaSession.Callback {
+    private val mediaSessionCallback = object : MediaLibrarySession.Callback {
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -91,6 +113,30 @@ class PlaybackService : MediaSessionService() {
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(playerCommands)
                 .build()
+        }
+
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            return Futures.immediateFuture(LibraryResult.ofItem(RadioData.getRootItem(), params))
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            if (parentId == "RADIO_ROOT") {
+                return Futures.immediateFuture(
+                    LibraryResult.ofItemList(RadioData.getMediaItems(), params)
+                )
+            }
+            return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
         }
 
         override fun onPlayerCommandRequest(
@@ -211,8 +257,17 @@ class PlaybackService : MediaSessionService() {
 
         player?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) requestManualFocus()
-                else abandonManualFocus()
+                if (isPlaying) {
+                    requestManualFocus()
+                    isReconnecting = false // Stop reconnection if playing
+                } else {
+                    abandonManualFocus()
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("PlaybackService", "Error de reproducción: ${error.message}. Iniciando Anti-Túnel.")
+                startReconnectionRoutine()
             }
 
             override fun onAudioSessionIdChanged(id: Int) {
@@ -262,9 +317,8 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-        mediaSession = MediaSession.Builder(this, forwardingPlayer)
+        mediaLibrarySession = MediaLibrarySession.Builder(this, forwardingPlayer, mediaSessionCallback)
             .setSessionActivity(pendingIntent)
-            .setCallback(mediaSessionCallback)
             .build()
     }
 
@@ -297,13 +351,13 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaLibrarySession
 
     override fun onDestroy() {
         abandonManualFocus()
-        mediaSession?.run {
+        mediaLibrarySession?.run {
             release()
-            mediaSession = null
+            mediaLibrarySession = null
         }
         player?.release()
         player = null

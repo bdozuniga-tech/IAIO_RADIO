@@ -73,7 +73,7 @@ fun SpectrumVisualizer(
         }
     }
 
-    val totalModes = 20
+    val totalModes = 23
 
     Box(
         modifier = Modifier
@@ -111,6 +111,9 @@ fun SpectrumVisualizer(
             17 -> Blocks3D(smoothL, smoothR)
             18 -> HeartPulse(smoothL, smoothR)
             19 -> SonarRadar(isPlaying, smoothL)
+            20 -> GalaxyVortex(isPlaying, smoothL, smoothR)
+            21 -> SpectrumPeaks(smoothL, smoothR, peakL, peakR)
+            22 -> LimbikFlow(isPlaying, smoothL, smoothR)
         }
         
         androidx.compose.material3.Text(
@@ -401,5 +404,58 @@ fun LedBar(label: String, level: Float, peakLevel: Float) {
                 drawRoundRect(color = finalColor, topLeft = Offset(i * (ledWidth + spacing), 0f), size = Size(ledWidth, height), cornerRadius = CornerRadius(1.8.dp.toPx()))
             }
         }
+    }
+}
+
+@Composable
+fun GalaxyVortex(isPlaying: Boolean, l: Float, r: Float) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val rotation by infiniteTransition.animateFloat(0f, 360f, infiniteRepeatable(tween(3000, easing = LinearEasing)))
+    Canvas(Modifier.fillMaxSize()) {
+        val center = Offset(size.width / 2, size.height / 2)
+        val energy = (l + r) / 2f
+        for (i in 0 until 12) {
+            val angle = rotation + (i * 30f)
+            val rad = Math.toRadians(angle.toDouble())
+            val dist = 15.dp.toPx() + energy * 40.dp.toPx()
+            drawCircle(
+                color = Color.Cyan.copy(alpha = 0.5f * energy),
+                radius = 3.dp.toPx() + energy * 10.dp.toPx(),
+                center = Offset(center.x + cos(rad).toFloat() * dist, center.y + sin(rad).toFloat() * dist)
+            )
+        }
+    }
+}
+
+@Composable
+fun SpectrumPeaks(l: Float, r: Float, pl: Float, pr: Float) {
+    Canvas(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 10.dp)) {
+        val w = size.width; val h = size.height
+        val barW = w / 4f
+        // L Bar
+        drawRect(Color.Green.copy(alpha = 0.3f), Offset(w*0.1f, h - h*l), Size(barW, h*l))
+        drawLine(Color.White, Offset(w*0.1f, h - h*pl), Offset(w*0.1f + barW, h - h*pl), 2.dp.toPx())
+        // R Bar
+        drawRect(Color.Green.copy(alpha = 0.3f), Offset(w*0.6f, h - h*r), Size(barW, h*r))
+        drawLine(Color.White, Offset(w*0.6f, h - h*pr), Offset(w*0.6f + barW, h - h*pr), 2.dp.toPx())
+    }
+}
+
+@Composable
+fun LimbikFlow(isPlaying: Boolean, l: Float, r: Float) {
+    val infiniteTransition = rememberInfiniteTransition()
+    val phase by infiniteTransition.animateFloat(0f, 2f * PI.toFloat(), infiniteRepeatable(tween(2000, easing = LinearEasing)))
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width; val h = size.height
+        val path = Path()
+        path.moveTo(0f, h/2f)
+        val energy = (l + r) / 2f
+        for (i in 0..w.toInt() step 5) {
+            val relX = i / w
+            val y = h/2f + sin(relX * 10f + phase) * h * 0.4f * energy
+            path.lineTo(i.toFloat(), y)
+        }
+        drawPath(path, Color(0xFF00FF41), style = Stroke(2.dp.toPx()))
+        drawPath(path, Color(0xFF00FF41).copy(alpha = 0.2f), style = Stroke(8.dp.toPx()))
     }
 }

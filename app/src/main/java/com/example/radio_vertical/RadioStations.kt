@@ -1,6 +1,10 @@
 package com.example.radio_vertical
 
 import androidx.compose.ui.graphics.Color
+import androidx.core.net.toUri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 
 data class RadioStation(
     val name: String,
@@ -9,7 +13,24 @@ data class RadioStation(
     val logoUrl: String? = null,
     val apiUrl: String? = null,
     val shortcode: String? = null
-)
+) {
+    fun toMediaItem(): MediaItem {
+        val metadata = MediaMetadata.Builder()
+            .setTitle(name)
+            .setArtist("Radio Vertical")
+            .setArtworkUri(logoUrl?.toUri())
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .build()
+
+        return MediaItem.Builder()
+            .setMediaId(url)
+            .setUri(url)
+            .setMimeType(if (url.contains("m3u8")) MimeTypes.APPLICATION_M3U8 else null)
+            .setMediaMetadata(metadata)
+            .build()
+    }
+}
 
 object RadioData {
     val stations = listOf(
@@ -158,4 +179,18 @@ object RadioData {
             logoUrl = "https://zeno.fm/_next/image/?url=https%3A%2F%2Fimages.zeno.fm%2Fstations%2Farchive%2F38f9b9646b%2Fimage.jpg&w=640&q=75"
         )
     )
+
+    fun getMediaItems(): List<MediaItem> = stations.map { it.toMediaItem() }
+    
+    fun getRootItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("RADIO_ROOT")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Estaciones")
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .build()
+            ).build()
+    }
 }

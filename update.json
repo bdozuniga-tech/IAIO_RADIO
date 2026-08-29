@@ -1,6 +1,6 @@
 {
-  "versionCode": 80,
-  "versionName": "7.0 Background Control",
+  "versionCode": 81,
+  "versionName": "8.0 Android Auto & Resilience",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 7.0! 🚀 Control total en segundo plano. Ahora puedes cambiar de radio desde el auto incluso con la app minimizada o el celular bloqueado. Arquitectura mejorada para una estabilidad superior. ⚡️🎧🚗🏆"
+  "releaseNotes": "¡VERSIÓN 8.0! 🚗 Soporte total para Android Auto. 📡 Sistema Anti-Túnel: reconexión automática tras pérdida de señal. 🌈 3 nuevos modos de visualización Pro. ⚡️🎧🏆"
 }
