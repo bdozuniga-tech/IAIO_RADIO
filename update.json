@@ -1,6 +1,6 @@
 {
-  "versionCode": 87,
-  "versionName": "8.6 Radio Link Fix",
+  "versionCode": 88,
+  "versionName": "8.7 Precise Sync Fix",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 8.6! 🛠 Corregido el enlace de LA ROCKA 80 con servidor más estable y metadatos en tiempo real. ⚡️🎧🏆"
+  "releaseNotes": "¡VERSIÓN 8.7! 🎯 Sincronización milimétrica: retrasado el motor de bajos (SUB) para un match perfecto con el audio. ⚡️🎧🏆"
 }

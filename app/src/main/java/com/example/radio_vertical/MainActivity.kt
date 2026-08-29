@@ -211,38 +211,45 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     }
 
     // SINCRONIZACIÓN DE AUDIO Y VISUALES (Compensación de Latencia de 140ms)
-    var delayedEnergyL by remember { mutableFloatStateOf(0f) }
-    var delayedEnergyR by remember { mutableFloatStateOf(0f) }
     
     val currentBpm by PlaybackService.currentBpm.collectAsState()
     val isMagnetActive by PlaybackService.isMagnetActive.collectAsState()
     val isCalibrated by PlaybackService.isCalibrated.collectAsState()
     val calibrationCountdown by PlaybackService.calibrationCountdown.collectAsState()
 
-    // Sistema de Buffer para sincronizar visuales (SINCRO REAL: 160ms para match perfecto con altavoz/BT)
+    // Sistema de Buffer para sincronizar visuales (SINCRO REAL: 200ms para match perfecto con altavoz/BT)
+    var delayedEnergyL by remember { mutableFloatStateOf(0f) }
+    var delayedEnergyR by remember { mutableFloatStateOf(0f) }
     var delayedWaveform by remember { mutableStateOf(FloatArray(128) { 0f }) }
+    var delayedMagnetActive by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val historyL = mutableListOf<Pair<Long, Float>>()
         val historyR = mutableListOf<Pair<Long, Float>>()
         val historyWave = mutableListOf<Pair<Long, FloatArray>>()
+        val historyMagnet = mutableListOf<Pair<Long, Boolean>>()
 
         while (true) {
             val now = System.currentTimeMillis()
             historyL.add(now to PlaybackService.currentEnergyL.value)
             historyR.add(now to PlaybackService.currentEnergyR.value)
             historyWave.add(now to PlaybackService.currentWaveform.value)
+            historyMagnet.add(now to PlaybackService.isMagnetActive.value)
             
-            // Subimos a 160ms: El audio tarda en procesarse y salir por los parlantes
-            // Esto hace que el visualizador espere al sonido real.
-            while (historyL.isNotEmpty() && now - historyL.first().first > 160) {
+            // Subimos a 200ms: El punto dulce para la latencia de sistema y Bluetooth
+            val targetDelay = 200 
+            
+            while (historyL.isNotEmpty() && now - historyL.first().first > targetDelay) {
                 delayedEnergyL = historyL.removeAt(0).second
             }
-            while (historyR.isNotEmpty() && now - historyR.first().first > 160) {
+            while (historyR.isNotEmpty() && now - historyR.first().first > targetDelay) {
                 delayedEnergyR = historyR.removeAt(0).second
             }
-            while (historyWave.isNotEmpty() && now - historyWave.first().first > 160) {
+            while (historyWave.isNotEmpty() && now - historyWave.first().first > targetDelay) {
                 delayedWaveform = historyWave.removeAt(0).second
+            }
+            while (historyMagnet.isNotEmpty() && now - historyMagnet.first().first > targetDelay) {
+                delayedMagnetActive = historyMagnet.removeAt(0).second
             }
             delay(1) 
         }
@@ -417,7 +424,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 realEnergyL = if (isPlayingState || isCountdownActive) delayedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
                 realEnergyR = if (isPlayingState || isCountdownActive) delayedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
                 realWaveform = delayedWaveform,
-                isMagnetActive = isMagnetActive, 
+                isMagnetActive = delayedMagnetActive, 
                 isCalibrated = isCalibrated, 
                 calibrationCountdown = calibrationCountdown, 
                 player = player, 
@@ -622,7 +629,7 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
             }
             Spacer(modifier = Modifier.height(24.dp))
             Box(modifier = Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
-                if (isActive) SpectrumVisualizer(isPlaying = isPlaying, energyL = realEnergyL, energyR = realEnergyR, waveform = realWaveform, currentMode = visMode, onModeChange = onModeChange) 
+                if (isActive) SpectrumVisualizer(isPlaying = isPlaying, energyL = realEnergyL, energyR = realEnergyR, waveform = realWaveform, isMagnetActive = isMagnetActive, currentMode = visMode, onModeChange = onModeChange) 
             }
             Spacer(modifier = Modifier.height(24.dp))
             val beatDuration = if (bpm > 0) 60000 / bpm else 500

@@ -34,6 +34,7 @@ fun SpectrumVisualizer(
     energyL: Float,
     energyR: Float,
     waveform: FloatArray,
+    isMagnetActive: Boolean,
     currentMode: Int,
     onModeChange: (Int) -> Unit
 ) {
@@ -43,7 +44,6 @@ fun SpectrumVisualizer(
     var peakL by remember { mutableFloatStateOf(0f) }
     var peakR by remember { mutableFloatStateOf(0f) }
 
-    val isMagnetActive by PlaybackService.isMagnetActive.collectAsState()
 
     // ESTADO DE 5 BANDAS POR CANAL (TOTAL 10)
     var bandsStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
