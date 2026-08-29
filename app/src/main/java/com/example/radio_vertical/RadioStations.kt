@@ -174,9 +174,10 @@ object RadioData {
         ),
         RadioStation(
             name = "LA ROCKA 80",
-            url = "https://stream.zeno.fm/u2q7u560vzzuv",
+            url = "https://audiopanel.com.ar:8000/radio.aac",
             backgroundColor = Color.Black,
-            logoUrl = "https://zeno.fm/_next/image/?url=https%3A%2F%2Fimages.zeno.fm%2Fstations%2Farchive%2F38f9b9646b%2Fimage.jpg&w=640&q=75"
+            logoUrl = "https://static.mytuner.mobi/media/tvos_radios/807/la-rocka-80.59df80ba.png",
+            apiUrl = "http://audiopanel.com.ar:8000/status-json.xsl"
         )
     )
 

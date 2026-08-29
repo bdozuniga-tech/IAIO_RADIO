@@ -27,10 +27,6 @@ import androidx.media3.common.util.UnstableApi
 import kotlin.math.*
 import kotlin.random.Random
 
-/**
- * MEGA VISUALIZADOR IAIO RADIO V5 - 20 MODOS PERSISTENTES 🚀
- * Calibrado para respuesta ultra-rápida (Ableton Style)
- */
 @OptIn(UnstableApi::class)
 @Composable
 fun SpectrumVisualizer(
@@ -47,6 +43,9 @@ fun SpectrumVisualizer(
     var peakL by remember { mutableFloatStateOf(0f) }
     var peakR by remember { mutableFloatStateOf(0f) }
 
+    val isMagnetActive by PlaybackService.isMagnetActive.collectAsState()
+
+    // ESTADO DE 5 BANDAS POR CANAL (TOTAL 10)
     var bandsStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
     var peaksStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
     var bandsStateR by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
@@ -69,19 +68,32 @@ fun SpectrumVisualizer(
                 val el = currentEnergyL.value
                 val er = currentEnergyR.value
 
-                // Ajuste de factores para 60Hz base, escalando por delta
-                // Esto garantiza que a 120Hz se vea igual de rápido pero más fluido
                 val smoothFactor = (0.5f.toDouble().pow((delta * 60).toDouble())).toFloat()
                 val peakFactor = (0.94f.toDouble().pow((delta * 60).toDouble())).toFloat()
 
-                // SIMULACIÓN DE 5 BANDAS PROFESIONALES POR CANAL
+                // SIMULACIÓN DE 5 BANDAS GATED (GOLPE EXCLUSIVO POR CATEGORÍA)
                 fun calculateBands(energy: Float): List<Float> {
+                    // SUB: El bombo (Kick) - Activado por Magnet
+                    val sub = if (isMagnetActive) (0.85f + Random.nextFloat() * 0.15f) else energy * 0.1f
+                    
+                    // LOW: El bajo (Bass line) - Activado por energía alta o remanente del Magnet
+                    val low = if (energy > 0.75f || isMagnetActive) (energy * 0.8f + 0.1f) else energy * 0.2f
+                    
+                    // MID: Voces y medios - Se activa solo si hay presencia musical clara
+                    val mid = if (energy > 0.55f) (energy * 0.7f + Random.nextFloat() * 0.2f) else energy * 0.15f
+                    
+                    // HIGH: Cajas y claps - Saltos rápidos y nerviosos
+                    val high = if (energy > 0.65f && Random.nextFloat() > 0.4f) (energy * 0.85f) else energy * 0.1f
+                    
+                    // TREBLE: Platillos y brillo - Destellos intermitentes de alta frecuencia
+                    val treble = if (energy > 0.45f && Random.nextFloat() > 0.6f) (0.7f + Random.nextFloat() * 0.3f) else energy * 0.05f
+
                     return listOf(
-                        energy * 1.2f + (Random.nextFloat() * 0.05f * energy), // SUB
-                        energy * 1.0f + (Random.nextFloat() * 0.08f * energy), // LOW
-                        energy * 0.85f + (Random.nextFloat() * 0.12f * energy), // MID
-                        energy * 0.7f + (Random.nextFloat() * 0.20f * energy), // HIGH
-                        energy * 0.6f + (Random.nextFloat() * 0.30f * energy)  // TREBLE
+                        sub.coerceIn(0f, 1.2f),
+                        low.coerceIn(0f, 1.2f),
+                        mid.coerceIn(0f, 1.2f),
+                        high.coerceIn(0f, 1.2f),
+                        treble.coerceIn(0f, 1.2f)
                     )
                 }
 
@@ -135,7 +147,7 @@ fun SpectrumVisualizer(
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.4f))
             .border(0.5.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-            .pointerInput(currentMode) { // KEY ACTUALIZADA PARA EVITAR STALENESS
+            .pointerInput(currentMode) {
                 detectTapGestures(onDoubleTap = {
                     onModeChange((currentMode + 1) % totalModes)
                     vibratePhone(context, 20)
@@ -179,11 +191,9 @@ fun SpectrumVisualizer(
     }
 }
 
-// IMPLEMENTACIONES DE MODOS (REFINADAS Y RÁPIDAS)
 @Composable
 fun DigitalLedBars(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>) {
     Row(Modifier.fillMaxSize().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        // CANAL IZQUIERDO (L)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             androidx.compose.material3.Text("L-CHANNEL", color = Color(0xFF00FF41).copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(6.dp))
@@ -193,8 +203,6 @@ fun DigitalLedBars(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>
             LedBar(label = "HIGH", level = bandsL[3], peakLevel = peaksL[3])
             LedBar(label = "TREB", level = bandsL[4], peakLevel = peaksL[4])
         }
-
-        // CANAL DERECHO (R)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             androidx.compose.material3.Text("R-CHANNEL", color = Color(0xFF00FF41).copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(6.dp))
@@ -238,18 +246,16 @@ fun AnalogVU(l: Float, r: Float) {
 @Composable
 fun ChunkyBars(bandsL: List<Float>, bandsR: List<Float>) {
     Canvas(Modifier.fillMaxSize().padding(2.dp)) {
-        val w = size.width; val h = size.height; val barW = w / 30f
-        // L
-        for (i in 0 until 15) {
+        val w = size.width; val h = size.height; val barW = w / 10f
+        for (i in 0 until 5) {
             val level = bandsL[i]
             val barH = h * level
-            drawRect(Color(0xFF00FF41).copy(alpha = 0.6f), Offset(i * barW, h - barH), Size(barW - 1.dp.toPx(), barH))
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.6f), Offset(i * barW, h - barH), Size(barW - 2.dp.toPx(), barH))
         }
-        // R
-        for (i in 0 until 15) {
+        for (i in 0 until 5) {
             val level = bandsR[i]
             val barH = h * level
-            drawRect(Color(0xFF00FF41).copy(alpha = 0.85f), Offset((i + 15) * barW, h - barH), Size(barW - 1.dp.toPx(), barH))
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.85f), Offset((i + 5) * barW, h - barH), Size(barW - 2.dp.toPx(), barH))
         }
     }
 }
@@ -324,13 +330,13 @@ fun LazerSpikes(waveform: FloatArray, energy: Float) {
 @Composable
 fun DotMatrix(bandsL: List<Float>, bandsR: List<Float>) {
     Canvas(Modifier.fillMaxSize()) {
-        val rows = 12; val cols = 30
+        val rows = 12; val cols = 10
         val cellW = size.width / cols; val cellH = size.height / rows
         for (c in 0 until cols) {
-            val level = if (c < 15) bandsL[c] else bandsR[c-15]
+            val level = if (c < 5) bandsL[c] else bandsR[c-5]
             val activeRows = (level * rows).toInt()
             for (rt in 0 until activeRows) {
-                drawCircle(Color(0xFF00FF41), 2.dp.toPx(), Offset(c * cellW + cellW/2, size.height - rt * cellH - cellH/2))
+                drawCircle(Color(0xFF00FF41), 3.dp.toPx(), Offset(c * cellW + cellW/2, size.height - rt * cellH - cellH/2))
             }
         }
     }
@@ -386,16 +392,14 @@ fun PlasmaAura(l: Float, r: Float) {
 @Composable
 fun TapeDeckBars(bandsL: List<Float>, bandsR: List<Float>) {
     Canvas(Modifier.fillMaxSize().padding(4.dp)) {
-        val barH = size.height / 32f
-        // L
-        for (i in 0 until 15) {
-            val y = i * (barH + 1.dp.toPx())
+        val barH = size.height / 12f
+        for (i in 0 until 5) {
+            val y = i * (barH + 2.dp.toPx())
             drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, barH))
             drawRect(Color(0xFF00FF41).copy(alpha = 0.7f), Offset(0f, y), Size(size.width * bandsL[i], barH))
         }
-        // R
-        for (i in 0 until 15) {
-            val y = (i + 16) * (barH + 1.dp.toPx())
+        for (i in 0 until 5) {
+            val y = (i + 6) * (barH + 2.dp.toPx())
             drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, barH))
             drawRect(Color(0xFF00FF41), Offset(0f, y), Size(size.width * bandsR[i], barH))
         }
@@ -447,7 +451,6 @@ fun Oscilloscope(isPlaying: Boolean, waveform: FloatArray) {
             val path = Path()
             for (i in waveform.indices) {
                 val x = (w / (waveform.size - 1)) * i
-                // CORTE DE ONDA (CLIPPING)
                 val y = (midY + (waveform[i] * h * 0.92f)).coerceIn(2.dp.toPx(), h - 2.dp.toPx())
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
@@ -475,7 +478,6 @@ fun VintageOscillator(isPlaying: Boolean, levelL: Float, levelR: Float) {
                 val noise = (Random.nextFloat() - 0.5f) * 18f * combinedEnergy
                 val sine1 = sin(progress * 14f + phase) * 28f * levelL
                 val sine2 = sin(progress * 32f - phase * 2.2f) * 15f * levelR
-                // CORTE DE ONDA (CLIPPING)
                 val y = (midY + sine1 + sine2 + noise).coerceIn(4.dp.toPx(), h - 4.dp.toPx())
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
@@ -531,14 +533,12 @@ fun SpectrumPeaks(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>,
     Canvas(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 4.dp)) {
         val w = size.width; val h = size.height
         val barW = w / 10f
-        // L
         for (i in 0 until 5) {
             val level = bandsL[i]
             val peak = peaksL[i]
             drawRect(Color(0xFF00FF41).copy(alpha = 0.3f), Offset(i * barW, h - h * level), Size(barW - 4.dp.toPx(), h * level))
             drawLine(Color(0xFF00FF41), Offset(i * barW, h - h * peak), Offset(i * barW + barW - 4.dp.toPx(), h - h * peak), 2.dp.toPx())
         }
-        // R
         for (i in 0 until 5) {
             val level = bandsR[i]
             val peak = peaksR[i]
@@ -559,7 +559,6 @@ fun LimbikFlow(isPlaying: Boolean, l: Float, r: Float) {
         val energy = (l + r) / 2f
         for (i in 0..w.toInt() step 5) {
             val relX = i / w
-            // CORTE DE ONDA (CLIPPING)
             val y = (h/2f + sin(relX * 10f + phase) * h * 0.4f * energy).coerceIn(4.dp.toPx(), h - 4.dp.toPx())
             path.lineTo(i.toFloat(), y)
         }
