@@ -47,10 +47,10 @@ fun SpectrumVisualizer(
     var peakL by remember { mutableFloatStateOf(0f) }
     var peakR by remember { mutableFloatStateOf(0f) }
 
-    var bandsStateL by remember { mutableStateOf(List(15) { 0f }) }
-    var peaksStateL by remember { mutableStateOf(List(15) { 0f }) }
-    var bandsStateR by remember { mutableStateOf(List(15) { 0f }) }
-    var peaksStateR by remember { mutableStateOf(List(15) { 0f }) }
+    var bandsStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
+    var peaksStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
+    var bandsStateR by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
+    var peaksStateR by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
 
     val currentEnergyL = rememberUpdatedState(energyL)
     val currentEnergyR = rememberUpdatedState(energyR)
@@ -74,16 +74,15 @@ fun SpectrumVisualizer(
                 val smoothFactor = (0.5f.toDouble().pow((delta * 60).toDouble())).toFloat()
                 val peakFactor = (0.94f.toDouble().pow((delta * 60).toDouble())).toFloat()
 
-                // SIMULACIÓN DE 15 BANDAS (5 LOW, 5 MID, 5 HIGH) POR CANAL
+                // SIMULACIÓN DE 5 BANDAS PROFESIONALES POR CANAL
                 fun calculateBands(energy: Float): List<Float> {
-                    val result = mutableListOf<Float>()
-                    // 5 LOWS
-                    for (i in 0 until 5) result.add(energy * (1.1f - i * 0.05f) + Random.nextFloat() * 0.05f * energy)
-                    // 5 MIDS
-                    for (i in 0 until 5) result.add(energy * (0.8f - i * 0.05f) + Random.nextFloat() * 0.15f * energy)
-                    // 5 HIGHS
-                    for (i in 0 until 5) result.add(energy * (0.5f - i * 0.05f) + Random.nextFloat() * 0.3f * energy)
-                    return result
+                    return listOf(
+                        energy * 1.2f + (Random.nextFloat() * 0.05f * energy), // SUB
+                        energy * 1.0f + (Random.nextFloat() * 0.08f * energy), // LOW
+                        energy * 0.85f + (Random.nextFloat() * 0.12f * energy), // MID
+                        energy * 0.7f + (Random.nextFloat() * 0.20f * energy), // HIGH
+                        energy * 0.6f + (Random.nextFloat() * 0.30f * energy)  // TREBLE
+                    )
                 }
 
                 val bandsL = calculateBands(el)
@@ -94,7 +93,7 @@ fun SpectrumVisualizer(
                 val newBandsR = bandsStateR.toMutableList()
                 val newPeaksR = peaksStateR.toMutableList()
 
-                for (i in 0 until 15) {
+                for (i in 0 until 5) {
                     val targetL = bandsL[i].coerceIn(0f, 1.2f)
                     newBandsL[i] = if (targetL > newBandsL[i]) targetL else newBandsL[i] * smoothFactor + targetL * (1f - smoothFactor)
                     if (targetL > newPeaksL[i]) newPeaksL[i] = targetL
@@ -183,33 +182,27 @@ fun SpectrumVisualizer(
 // IMPLEMENTACIONES DE MODOS (REFINADAS Y RÁPIDAS)
 @Composable
 fun DigitalLedBars(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        // CANAL IZQUIERDO (LEFT)
+    Row(Modifier.fillMaxSize().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        // CANAL IZQUIERDO (L)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            androidx.compose.material3.Text("L-CH", color = Color(0xFF00FF41).copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Black)
-            
-            BandGroupLabel("LOW")
-            for(i in 0..4) LedBar(label = "B${i+1}", level = bandsL[i], peakLevel = peaksL[i])
-            
-            BandGroupLabel("MID")
-            for(i in 5..9) LedBar(label = "B${i+1}", level = bandsL[i], peakLevel = peaksL[i])
-            
-            BandGroupLabel("HIGH")
-            for(i in 10..14) LedBar(label = "B${i+1}", level = bandsL[i], peakLevel = peaksL[i])
+            androidx.compose.material3.Text("L-CHANNEL", color = Color(0xFF00FF41).copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(6.dp))
+            LedBar(label = "SUB", level = bandsL[0], peakLevel = peaksL[0])
+            LedBar(label = "LOW", level = bandsL[1], peakLevel = peaksL[1])
+            LedBar(label = "MID", level = bandsL[2], peakLevel = peaksL[2])
+            LedBar(label = "HIGH", level = bandsL[3], peakLevel = peaksL[3])
+            LedBar(label = "TREB", level = bandsL[4], peakLevel = peaksL[4])
         }
 
-        // CANAL DERECHO (RIGHT)
+        // CANAL DERECHO (R)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            androidx.compose.material3.Text("R-CH", color = Color(0xFF00FF41).copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Black)
-            
-            BandGroupLabel("LOW")
-            for(i in 0..4) LedBar(label = "B${i+1}", level = bandsR[i], peakLevel = peaksR[i])
-            
-            BandGroupLabel("MID")
-            for(i in 5..9) LedBar(label = "B${i+1}", level = bandsR[i], peakLevel = peaksR[i])
-            
-            BandGroupLabel("HIGH")
-            for(i in 10..14) LedBar(label = "B${i+1}", level = bandsR[i], peakLevel = peaksR[i])
+            androidx.compose.material3.Text("R-CHANNEL", color = Color(0xFF00FF41).copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(6.dp))
+            LedBar(label = "SUB", level = bandsR[0], peakLevel = peaksR[0])
+            LedBar(label = "LOW", level = bandsR[1], peakLevel = peaksR[1])
+            LedBar(label = "MID", level = bandsR[2], peakLevel = peaksR[2])
+            LedBar(label = "HIGH", level = bandsR[3], peakLevel = peaksR[3])
+            LedBar(label = "TREB", level = bandsR[4], peakLevel = peaksR[4])
         }
     }
 }
@@ -404,7 +397,7 @@ fun TapeDeckBars(bandsL: List<Float>, bandsR: List<Float>) {
         for (i in 0 until 15) {
             val y = (i + 16) * (barH + 1.dp.toPx())
             drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, barH))
-            drawRect(Color(0xFF00FF41).copy(alpha = 0.7f), Offset(0f, y), Size(size.width * bandsR[i], barH))
+            drawRect(Color(0xFF00FF41), Offset(0f, y), Size(size.width * bandsR[i], barH))
         }
     }
 }
@@ -498,7 +491,7 @@ fun VintageOscillator(isPlaying: Boolean, levelL: Float, levelR: Float) {
 fun LedBar(label: String, level: Float, peakLevel: Float) {
     val ledCount = 42
     Row(verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.material3.Text(text = label, color = if (label == "R") Color(0xFFFF5555) else Color.White.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.width(22.dp))
+        androidx.compose.material3.Text(text = label, color = Color.White.copy(alpha = 0.6f), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
         Canvas(modifier = Modifier.weight(1f).height(12.dp)) {
             val width = size.width; val height = size.height
             val ledWidth = (width / ledCount) * 0.7f; val spacing = (width / ledCount) * 0.3f
@@ -507,7 +500,7 @@ fun LedBar(label: String, level: Float, peakLevel: Float) {
                 val isActive = level > ledLevel; val isPeak = (peakLevel > ledLevel && peakLevel < ledLevel + (1f / ledCount))
                 val baseColor = when { i < ledCount * 0.5 -> Color(0xFF00FF00); i < ledCount * 0.8 -> Color(0xFFFFFF00); else -> Color(0xFFFF0000) }
                 val finalColor = if (isActive) baseColor else if (isPeak) baseColor.copy(alpha = 0.95f) else baseColor.copy(alpha = 0.15f)
-                drawRoundRect(color = finalColor, topLeft = Offset(i * (ledWidth + spacing), 0f), size = Size(ledWidth, height), cornerRadius = CornerRadius(1.8.dp.toPx()))
+                drawRoundRect(color = finalColor, topLeft = Offset(i * (ledWidth + spacing), 0f), size = Size(ledWidth, height), cornerRadius = CornerRadius(1.2.dp.toPx()))
             }
         }
     }
@@ -537,20 +530,20 @@ fun GalaxyVortex(isPlaying: Boolean, l: Float, r: Float) {
 fun SpectrumPeaks(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>) {
     Canvas(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 4.dp)) {
         val w = size.width; val h = size.height
-        val barW = w / 30f
+        val barW = w / 10f
         // L
-        for (i in 0 until 15) {
+        for (i in 0 until 5) {
             val level = bandsL[i]
             val peak = peaksL[i]
-            drawRect(Color(0xFF00FF41).copy(alpha = 0.3f), Offset(i * barW, h - h * level), Size(barW - 2.dp.toPx(), h * level))
-            drawLine(Color(0xFF00FF41), Offset(i * barW, h - h * peak), Offset(i * barW + barW - 2.dp.toPx(), h - h * peak), 2.dp.toPx())
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.3f), Offset(i * barW, h - h * level), Size(barW - 4.dp.toPx(), h * level))
+            drawLine(Color(0xFF00FF41), Offset(i * barW, h - h * peak), Offset(i * barW + barW - 4.dp.toPx(), h - h * peak), 2.dp.toPx())
         }
         // R
-        for (i in 0 until 15) {
+        for (i in 0 until 5) {
             val level = bandsR[i]
             val peak = peaksR[i]
-            drawRect(Color(0xFF00FF41).copy(alpha = 0.5f), Offset((i + 15) * barW, h - h * level), Size(barW - 2.dp.toPx(), h * level))
-            drawLine(Color(0xFF00FF41), Offset((i + 15) * barW, h - h * peak), Offset((i + 15) * barW + barW - 2.dp.toPx(), h - h * peak), 2.dp.toPx())
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.5f), Offset((i + 5) * barW, h - h * level), Size(barW - 4.dp.toPx(), h * level))
+            drawLine(Color(0xFF00FF41), Offset((i + 5) * barW, h - h * peak), Offset((i + 5) * barW + barW - 4.dp.toPx(), h - h * peak), 2.dp.toPx())
         }
     }
 }
