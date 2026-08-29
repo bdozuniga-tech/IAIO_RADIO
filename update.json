@@ -1,6 +1,6 @@
 {
-  "versionCode": 81,
-  "versionName": "8.0 Android Auto & Resilience",
+  "versionCode": 85,
+  "versionName": "8.4 Audio/Visual Sync",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 8.0! 🚗 Soporte total para Android Auto. 📡 Sistema Anti-Túnel: reconexión automática tras pérdida de señal. 🌈 3 nuevos modos de visualización Pro. ⚡️🎧🏆"
+  "releaseNotes": "¡VERSIÓN 8.4! 🎯 Sincronización perfecta entre audio y visuales (160ms delay). 📊 Ecualizador de 30 bandas con etiquetas L/R y frecuencias. ⚡️🎧🏆"
 }

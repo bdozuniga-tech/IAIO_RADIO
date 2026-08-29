@@ -219,23 +219,32 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val isCalibrated by PlaybackService.isCalibrated.collectAsState()
     val calibrationCountdown by PlaybackService.calibrationCountdown.collectAsState()
 
-    // Sistema de Buffer para sincronizar visuales (SINCRO REAL: 2ms)
+    // Sistema de Buffer para sincronizar visuales (SINCRO REAL: 160ms para match perfecto con altavoz/BT)
+    var delayedWaveform by remember { mutableStateOf(FloatArray(128) { 0f }) }
+
     LaunchedEffect(Unit) {
         val historyL = mutableListOf<Pair<Long, Float>>()
         val historyR = mutableListOf<Pair<Long, Float>>()
+        val historyWave = mutableListOf<Pair<Long, FloatArray>>()
+
         while (true) {
             val now = System.currentTimeMillis()
             historyL.add(now to PlaybackService.currentEnergyL.value)
             historyR.add(now to PlaybackService.currentEnergyR.value)
+            historyWave.add(now to PlaybackService.currentWaveform.value)
             
-            // Bajamos a 2ms: Latencia prácticamente nula, respuesta eléctrica pura
-            while (historyL.isNotEmpty() && now - historyL.first().first > 2) {
+            // Subimos a 160ms: El audio tarda en procesarse y salir por los parlantes
+            // Esto hace que el visualizador espere al sonido real.
+            while (historyL.isNotEmpty() && now - historyL.first().first > 160) {
                 delayedEnergyL = historyL.removeAt(0).second
             }
-            while (historyR.isNotEmpty() && now - historyR.first().first > 2) {
+            while (historyR.isNotEmpty() && now - historyR.first().first > 160) {
                 delayedEnergyR = historyR.removeAt(0).second
             }
-            delay(1) // Muestreo máximo
+            while (historyWave.isNotEmpty() && now - historyWave.first().first > 160) {
+                delayedWaveform = historyWave.removeAt(0).second
+            }
+            delay(1) 
         }
     }
 
@@ -407,6 +416,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 bpm = currentBpm, 
                 realEnergyL = if (isPlayingState || isCountdownActive) delayedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
                 realEnergyR = if (isPlayingState || isCountdownActive) delayedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                realWaveform = delayedWaveform,
                 isMagnetActive = isMagnetActive, 
                 isCalibrated = isCalibrated, 
                 calibrationCountdown = calibrationCountdown, 
@@ -458,7 +468,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (isMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v8.0 (vCode 81) • MEJORAS: Android Auto Full Support • Anti-Túnel (Auto Reconnect) • Visualizadores Pro • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v8.4 (vCode 85) • MEJORAS: Sincronización Audio/Visual Perfecta (160ms Delay) • 30 Bandas EQ • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
@@ -505,10 +515,62 @@ fun DefaultVinyl(referentialUrl: String?, isAluminum: Boolean) {
 
 @OptIn(UnstableApi::class)
 @Composable
-fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, isMagnetActive: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String) {
+fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realWaveform: FloatArray, isMagnetActive: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String) {
     val context = LocalContext.current
     var currentRotation by remember { mutableStateOf(0f) }
     var isTouching by remember { mutableStateOf(false) }
+
+    // MONITOR DE BATERÍA (ESTILO MOTO G)
+    var batteryLevel by remember { mutableFloatStateOf(1f) }
+    var isCharging by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                val status = intent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                if (level != -1 && scale != -1) {
+                    batteryLevel = level.toFloat() / scale.toFloat()
+                }
+                isCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                             status == android.os.BatteryManager.BATTERY_STATUS_FULL
+            }
+        }
+        val filter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+        context.registerReceiver(receiver, filter)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
+    // ANIMACIÓN DE CARGA (MOTO G PULSE)
+    val infiniteTransition = rememberInfiniteTransition(label = "batteryCharging")
+    val chargingSweep by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = batteryLevel,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "chargingSweep"
+    )
+    val chargingAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "chargingAlpha"
+    )
+    val lowBatteryAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "lowBatteryAlpha"
+    )
 
     LaunchedEffect(isPlaying, isTouching) {
         if (isPlaying || isTouching) {
@@ -527,8 +589,8 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().padding(top = 54.dp, start = 24.dp, end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(modifier = Modifier.fillMaxWidth().pointerInput(player) {
+        Column(modifier = Modifier.fillMaxSize().padding(top = 54.dp, start = 4.dp, end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).pointerInput(player) {
                 awaitPointerEventScope {
                     while (true) {
                         awaitFirstDown(requireUnconsumed = false)
@@ -558,26 +620,29 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                 Text(text = "CANCION : ${title.ifEmpty { "En vivo" }}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 40.dp))
                 if (artist.isNotEmpty()) Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
             }
-            Spacer(modifier = Modifier.height(48.dp))
-            Box(modifier = Modifier.pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
-                if (isActive) SpectrumVisualizer(isPlaying = isPlaying, energyL = realEnergyL, energyR = realEnergyR, currentMode = visMode, onModeChange = onModeChange) 
+            Spacer(modifier = Modifier.height(24.dp))
+            Box(modifier = Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
+                if (isActive) SpectrumVisualizer(isPlaying = isPlaying, energyL = realEnergyL, energyR = realEnergyR, waveform = realWaveform, currentMode = visMode, onModeChange = onModeChange) 
             }
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             val beatDuration = if (bpm > 0) 60000 / bpm else 500
             val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
             val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
             val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
             val finalScale = beatPulse * energyFactor
-            Box(modifier = Modifier.size(360.dp).pointerInput(player) {
+            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).pointerInput(player) {
                 detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
-                    isTouching = true; var initialAngle = Math.toDegrees(atan2((it.y - 180.dp.toPx()).toDouble(), (it.x - 180.dp.toPx()).toDouble())).toFloat()
+                    isTouching = true
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    var initialAngle = Math.toDegrees(atan2((it.y - centerY).toDouble(), (it.x - centerX).toDouble())).toFloat()
                     var isDragging = false; PlaybackService.stutterProcessor.isScratching = true
                     try {
                         awaitPointerEventScope {
                             while (true) {
                                 val event = awaitPointerEvent(); vibratePhone(context, 5); val pointer = event.changes.firstOrNull { it.pressed }
                                 if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
-                                val currentAngle = Math.toDegrees(atan2((pointer.position.y - 180.dp.toPx()).toDouble(), (pointer.position.x - 180.dp.toPx()).toDouble())).toFloat()
+                                val currentAngle = Math.toDegrees(atan2((pointer.position.y - centerY).toDouble(), (pointer.position.x - centerX).toDouble())).toFloat()
                                 var delta = currentAngle - initialAngle
                                 if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
                                 if (Math.abs(delta) > 0.5f || isDragging) { if (!isDragging) { isDragging = true; onScratchStart() }; currentRotation = (currentRotation + delta) % 360f; PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f); initialAngle = currentAngle }
@@ -586,13 +651,72 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
                 })
             }, contentAlignment = Alignment.Center) {
-                Box(Modifier.fillMaxSize().rotate(currentRotation), contentAlignment = Alignment.Center) {
-                    Canvas(Modifier.fillMaxSize()) { drawCircle(Color(0xFF2B2B2B), size.minDimension / 2) }
-                    Box(Modifier.size(340.dp).clip(CircleShape).background(Color.Black))
-                    Box(Modifier.size(330.dp).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
+                // ANILLO DE BATERÍA (MOTO G STYLE - DYNAMICO TOTAL)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val strokeWidth = 5.dp.toPx() 
+                    val radius = (size.minDimension / 2) - (strokeWidth / 2)
+                    
+                    val batteryColor = when {
+                        isCharging -> Color(0xFF00FF41) // VERDE FUERTE INCANDESCENTE (IAIO GREEN)
+                        batteryLevel > 0.5f -> Color(0xFF00FF41) // Verde
+                        batteryLevel > 0.2f -> Color.Yellow
+                        else -> Color.Red
+                    }
+
+                    val currentSweep = if (isCharging) chargingSweep else batteryLevel
+                    val isEmergency = batteryLevel <= 0.1f && !isCharging
+                    val currentAlpha = when {
+                        isCharging -> chargingAlpha
+                        isEmergency -> lowBatteryAlpha
+                        else -> 1.0f
+                    }
+
+                    // DIBUJAMOS SOLO EL NIVEL ACTIVO (SIN FONDO FANTASMA)
+                    drawArc(
+                        color = batteryColor.copy(alpha = currentAlpha),
+                        startAngle = -90f,
+                        sweepAngle = 360f * currentSweep,
+                        useCenter = false,
+                        topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                        size = Size(radius * 2, radius * 2),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    )
+                    
+                    // EFECTO DIFUMINADO DE EMERGENCIA (Bajo 10%)
+                    if (isEmergency) {
+                        drawArc(
+                            color = batteryColor.copy(alpha = currentAlpha * 0.3f),
+                            startAngle = -90f,
+                            sweepAngle = 360f * currentSweep,
+                            useCenter = false,
+                            topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                            size = Size(radius * 2, radius * 2),
+                            style = Stroke(width = strokeWidth * 4f, cap = StrokeCap.Round)
+                        )
+                    }
+
+                    // Brillo Incandescente (Más fuerte si está cargando)
+                    if (isCharging || batteryLevel > 0.15f || isEmergency) {
+                        val glowAlpha = if (isCharging) 0.5f else 0.2f
+                        drawArc(
+                            color = batteryColor.copy(alpha = glowAlpha * currentAlpha),
+                            startAngle = -90f,
+                            sweepAngle = 360f * currentSweep,
+                            useCenter = false,
+                            topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                            size = Size(radius * 2, radius * 2),
+                            style = Stroke(width = strokeWidth * 2.5f, cap = StrokeCap.Round)
+                        )
+                    }
+                }
+
+                // GRUPO DEL VINILO (DINÁMICO - CASI A RAZ DE PANTALLA)
+                Box(Modifier.fillMaxWidth(0.92f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.Black))
+                    Box(Modifier.fillMaxSize(0.97f).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
                         SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
                     }
-                    Canvas(Modifier.size(328.dp)) {
+                    Canvas(Modifier.fillMaxSize(0.96f)) {
                         drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
                         drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
                     }

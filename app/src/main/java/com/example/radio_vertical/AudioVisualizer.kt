@@ -37,6 +37,7 @@ fun SpectrumVisualizer(
     isPlaying: Boolean, 
     energyL: Float,
     energyR: Float,
+    waveform: FloatArray,
     currentMode: Int,
     onModeChange: (Int) -> Unit
 ) {
@@ -46,29 +47,82 @@ fun SpectrumVisualizer(
     var peakL by remember { mutableFloatStateOf(0f) }
     var peakR by remember { mutableFloatStateOf(0f) }
 
+    var bandsStateL by remember { mutableStateOf(List(15) { 0f }) }
+    var peaksStateL by remember { mutableStateOf(List(15) { 0f }) }
+    var bandsStateR by remember { mutableStateOf(List(15) { 0f }) }
+    var peaksStateR by remember { mutableStateOf(List(15) { 0f }) }
+
     val currentEnergyL = rememberUpdatedState(energyL)
     val currentEnergyR = rememberUpdatedState(energyR)
-    
-    val waveformFlowState = PlaybackService.stutterProcessor.waveformFlow.collectAsState()
-    val waveform = waveformFlowState.value
 
     LaunchedEffect(Unit) {
+        var lastFrameTimeNanos = 0L
         while (true) {
-            withFrameNanos {
+            withFrameNanos { time ->
+                if (lastFrameTimeNanos == 0L) {
+                    lastFrameTimeNanos = time
+                    return@withFrameNanos
+                }
+                val delta = (time - lastFrameTimeNanos) / 1_000_000_000f
+                lastFrameTimeNanos = time
+
                 val el = currentEnergyL.value
                 val er = currentEnergyR.value
+
+                // Ajuste de factores para 60Hz base, escalando por delta
+                // Esto garantiza que a 120Hz se vea igual de rápido pero más fluido
+                val smoothFactor = (0.5f.toDouble().pow((delta * 60).toDouble())).toFloat()
+                val peakFactor = (0.94f.toDouble().pow((delta * 60).toDouble())).toFloat()
+
+                // SIMULACIÓN DE 15 BANDAS (5 LOW, 5 MID, 5 HIGH) POR CANAL
+                fun calculateBands(energy: Float): List<Float> {
+                    val result = mutableListOf<Float>()
+                    // 5 LOWS
+                    for (i in 0 until 5) result.add(energy * (1.1f - i * 0.05f) + Random.nextFloat() * 0.05f * energy)
+                    // 5 MIDS
+                    for (i in 0 until 5) result.add(energy * (0.8f - i * 0.05f) + Random.nextFloat() * 0.15f * energy)
+                    // 5 HIGHS
+                    for (i in 0 until 5) result.add(energy * (0.5f - i * 0.05f) + Random.nextFloat() * 0.3f * energy)
+                    return result
+                }
+
+                val bandsL = calculateBands(el)
+                val bandsR = calculateBands(er)
+
+                val newBandsL = bandsStateL.toMutableList()
+                val newPeaksL = peaksStateL.toMutableList()
+                val newBandsR = bandsStateR.toMutableList()
+                val newPeaksR = peaksStateR.toMutableList()
+
+                for (i in 0 until 15) {
+                    val targetL = bandsL[i].coerceIn(0f, 1.2f)
+                    newBandsL[i] = if (targetL > newBandsL[i]) targetL else newBandsL[i] * smoothFactor + targetL * (1f - smoothFactor)
+                    if (targetL > newPeaksL[i]) newPeaksL[i] = targetL
+                    newPeaksL[i] *= peakFactor
+
+                    val targetR = bandsR[i].coerceIn(0f, 1.2f)
+                    newBandsR[i] = if (targetR > newBandsR[i]) targetR else newBandsR[i] * smoothFactor + targetR * (1f - smoothFactor)
+                    if (targetR > newPeaksR[i]) newPeaksR[i] = targetR
+                    newPeaksR[i] *= peakFactor
+                }
+                
+                bandsStateL = newBandsL
+                peaksStateL = newPeaksL
+                bandsStateR = newBandsR
+                peaksStateR = newPeaksR
+
                 if (el > 0.001f || er > 0.001f) {
-                    // ATAQUE TOTAL (1:1): Salto instantáneo hacia arriba
-                    smoothL = if (el > smoothL) el else smoothL * 0.5f + el * 0.5f
-                    smoothR = if (er > smoothR) er else smoothR * 0.5f + er * 0.5f
+                    smoothL = if (el > smoothL) el else smoothL * smoothFactor + el * (1f - smoothFactor)
+                    smoothR = if (er > smoothR) er else smoothR * smoothFactor + er * (1f - smoothFactor)
                     if (el > peakL) peakL = el
                     if (er > peakR) peakR = er
                 } else {
-                    smoothL *= 0.85f 
-                    smoothR *= 0.85f
+                    val decayFactor = (0.85f.toDouble().pow((delta * 60).toDouble())).toFloat()
+                    smoothL *= decayFactor
+                    smoothR *= decayFactor
                 }
-                peakL *= 0.94f // Picos más rápidos
-                peakR *= 0.94f
+                peakL *= peakFactor
+                peakR *= peakFactor
             }
         }
     }
@@ -77,8 +131,8 @@ fun SpectrumVisualizer(
 
     Box(
         modifier = Modifier
-            .width(310.dp)
-            .height(85.dp)
+            .fillMaxWidth()
+            .height(160.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.4f))
             .border(0.5.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
@@ -91,28 +145,28 @@ fun SpectrumVisualizer(
         contentAlignment = Alignment.Center
     ) {
         when (currentMode) {
-            0 -> DigitalLedBars(smoothL, smoothR, peakL, peakR)
+            0 -> DigitalLedBars(bandsStateL, peaksStateL, bandsStateR, peaksStateR)
             1 -> VintageOscillator(isPlaying, smoothL, smoothR)
             2 -> Oscilloscope(isPlaying, waveform)
             3 -> AnalogVU(smoothL, smoothR)
-            4 -> ChunkyBars(smoothL, smoothR, peakL, peakR)
+            4 -> ChunkyBars(bandsStateL, bandsStateR)
             5 -> NeonWave(isPlaying, waveform, smoothL)
             6 -> RadialPips(smoothL, smoothR)
             7 -> MirrorWave(waveform, smoothL)
             8 -> MatrixRain(isPlaying, smoothL)
             9 -> LazerSpikes(waveform, smoothL)
-            10 -> DotMatrix(smoothL, smoothR)
+            10 -> DotMatrix(bandsStateL, bandsStateR)
             11 -> FluidCurve(isPlaying, smoothL, smoothR)
             12 -> RGBGlow(smoothL, smoothR)
             13 -> CyberGrid(isPlaying, smoothL)
             14 -> PlasmaAura(smoothL, smoothR)
-            15 -> TapeDeckBars(smoothL, smoothR)
+            15 -> TapeDeckBars(bandsStateL, bandsStateR)
             16 -> StrobeHit(isPlaying, smoothL)
             17 -> Blocks3D(smoothL, smoothR)
             18 -> HeartPulse(smoothL, smoothR)
             19 -> SonarRadar(isPlaying, smoothL)
             20 -> GalaxyVortex(isPlaying, smoothL, smoothR)
-            21 -> SpectrumPeaks(smoothL, smoothR, peakL, peakR)
+            21 -> SpectrumPeaks(bandsStateL, peaksStateL, bandsStateR, peaksStateR)
             22 -> LimbikFlow(isPlaying, smoothL, smoothR)
         }
         
@@ -128,12 +182,47 @@ fun SpectrumVisualizer(
 
 // IMPLEMENTACIONES DE MODOS (REFINADAS Y RÁPIDAS)
 @Composable
-fun DigitalLedBars(l: Float, r: Float, pl: Float, pr: Float) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.Center) {
-        LedBar(label = "L", level = l, peakLevel = pl)
-        Spacer(Modifier.height(10.dp))
-        LedBar(label = "R", level = r, peakLevel = pr)
+fun DigitalLedBars(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // CANAL IZQUIERDO (LEFT)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+            androidx.compose.material3.Text("L-CH", color = Color(0xFF00FF41).copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Black)
+            
+            BandGroupLabel("LOW")
+            for(i in 0..4) LedBar(label = "B${i+1}", level = bandsL[i], peakLevel = peaksL[i])
+            
+            BandGroupLabel("MID")
+            for(i in 5..9) LedBar(label = "B${i+1}", level = bandsL[i], peakLevel = peaksL[i])
+            
+            BandGroupLabel("HIGH")
+            for(i in 10..14) LedBar(label = "B${i+1}", level = bandsL[i], peakLevel = peaksL[i])
+        }
+
+        // CANAL DERECHO (RIGHT)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+            androidx.compose.material3.Text("R-CH", color = Color(0xFF00FF41).copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Black)
+            
+            BandGroupLabel("LOW")
+            for(i in 0..4) LedBar(label = "B${i+1}", level = bandsR[i], peakLevel = peaksR[i])
+            
+            BandGroupLabel("MID")
+            for(i in 5..9) LedBar(label = "B${i+1}", level = bandsR[i], peakLevel = peaksR[i])
+            
+            BandGroupLabel("HIGH")
+            for(i in 10..14) LedBar(label = "B${i+1}", level = bandsR[i], peakLevel = peaksR[i])
+        }
     }
+}
+
+@Composable
+fun BandGroupLabel(text: String) {
+    androidx.compose.material3.Text(
+        text = text, 
+        color = Color.White.copy(alpha = 0.3f), 
+        fontSize = 7.sp, 
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 2.dp)
+    )
 }
 
 @Composable
@@ -154,13 +243,20 @@ fun AnalogVU(l: Float, r: Float) {
 }
 
 @Composable
-fun ChunkyBars(l: Float, r: Float, pl: Float, pr: Float) {
-    Canvas(Modifier.fillMaxSize().padding(10.dp)) {
-        val w = size.width; val h = size.height; val barW = w / 20f
-        for (i in 0 until 20) {
-            val level = if (i < 10) l else r
-            val barH = h * level * (0.3f + Random.nextFloat() * 0.7f)
-            drawRect(Color.Cyan.copy(alpha = 0.6f), Offset(i * barW, h - barH), Size(barW - 1.dp.toPx(), barH))
+fun ChunkyBars(bandsL: List<Float>, bandsR: List<Float>) {
+    Canvas(Modifier.fillMaxSize().padding(2.dp)) {
+        val w = size.width; val h = size.height; val barW = w / 30f
+        // L
+        for (i in 0 until 15) {
+            val level = bandsL[i]
+            val barH = h * level
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.6f), Offset(i * barW, h - barH), Size(barW - 1.dp.toPx(), barH))
+        }
+        // R
+        for (i in 0 until 15) {
+            val level = bandsR[i]
+            val barH = h * level
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.85f), Offset((i + 15) * barW, h - barH), Size(barW - 1.dp.toPx(), barH))
         }
     }
 }
@@ -175,8 +271,8 @@ fun NeonWave(isPlaying: Boolean, waveform: FloatArray, energy: Float) {
             val y = (h/2) + waveform[i] * h * 0.48f
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        drawPath(path, Color(0xFF00E5FF), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-        drawPath(path, Color(0xFF00E5FF).copy(alpha = 0.25f), style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(path, Color(0xFF00FF41), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(path, Color(0xFF00FF41).copy(alpha = 0.25f), style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 
@@ -189,7 +285,7 @@ fun RadialPips(l: Float, r: Float) {
             val angle = (i.toFloat() / count) * 360f
             val dist = 10.dp.toPx() + (if (i % 2 == 0) l else r) * 35.dp.toPx()
             val rad = Math.toRadians(angle.toDouble())
-            drawCircle(Color.White.copy(alpha = 0.8f), 1.2.dp.toPx(), Offset(center.x + cos(rad).toFloat() * dist, center.y + sin(rad).toFloat() * dist))
+            drawCircle(Color(0xFF00FF41).copy(alpha = 0.8f), 1.2.dp.toPx(), Offset(center.x + cos(rad).toFloat() * dist, center.y + sin(rad).toFloat() * dist))
         }
     }
 }
@@ -201,7 +297,7 @@ fun MirrorWave(waveform: FloatArray, energy: Float) {
         for (i in waveform.indices step 2) {
             val x = (w / waveform.size) * i
             val lineH = abs(waveform[i]) * h * 0.65f
-            drawLine(Color.Magenta.copy(alpha = 0.9f), Offset(x, midY - lineH), Offset(x, midY + lineH), 1.8.dp.toPx())
+            drawLine(Color(0xFF00FF41).copy(alpha = 0.9f), Offset(x, midY - lineH), Offset(x, midY + lineH), 1.8.dp.toPx())
         }
     }
 }
@@ -227,21 +323,21 @@ fun LazerSpikes(waveform: FloatArray, energy: Float) {
         for (i in waveform.indices step 2) {
             val x = (w / waveform.size) * i
             val spike = waveform[i] * h * 0.95f
-            drawLine(Color.Red, Offset(x, midY), Offset(x, midY - spike), 0.8.dp.toPx())
+            drawLine(Color(0xFF00FF41), Offset(x, midY), Offset(x, midY - spike), 0.8.dp.toPx())
         }
     }
 }
 
 @Composable
-fun DotMatrix(l: Float, r: Float) {
+fun DotMatrix(bandsL: List<Float>, bandsR: List<Float>) {
     Canvas(Modifier.fillMaxSize()) {
-        val rows = 10; val cols = 36
+        val rows = 12; val cols = 30
         val cellW = size.width / cols; val cellH = size.height / rows
         for (c in 0 until cols) {
-            val level = if (c < cols/2) l else r
+            val level = if (c < 15) bandsL[c] else bandsR[c-15]
             val activeRows = (level * rows).toInt()
             for (rt in 0 until activeRows) {
-                drawCircle(Color.Yellow, 1.8.dp.toPx(), Offset(c * cellW + cellW/2, size.height - rt * cellH - cellH/2))
+                drawCircle(Color(0xFF00FF41), 2.dp.toPx(), Offset(c * cellW + cellW/2, size.height - rt * cellH - cellH/2))
             }
         }
     }
@@ -259,7 +355,7 @@ fun FluidCurve(isPlaying: Boolean, l: Float, r: Float) {
             val y = (h/2) + sin(i * 0.45f + phase) * h * 0.45f * (l + r)
             path.lineTo(x, y)
         }
-        drawPath(path, Color.Cyan, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(path, Color(0xFF00FF41), style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 
@@ -267,9 +363,9 @@ fun FluidCurve(isPlaying: Boolean, l: Float, r: Float) {
 fun RGBGlow(l: Float, r: Float) {
     Canvas(Modifier.fillMaxSize()) {
         val center = Offset(size.width / 2, size.height / 2)
-        drawCircle(Brush.radialGradient(listOf(Color.Red.copy(alpha = l), Color.Transparent)), l * 70.dp.toPx(), center.copy(x = center.x - 40.dp.toPx()))
-        drawCircle(Brush.radialGradient(listOf(Color.Green.copy(alpha = r), Color.Transparent)), r * 70.dp.toPx(), center.copy(x = center.x + 40.dp.toPx()))
-        drawCircle(Brush.radialGradient(listOf(Color.Blue.copy(alpha = (l+r)/2f), Color.Transparent)), (l+r) * 40.dp.toPx(), center)
+        drawCircle(Brush.radialGradient(listOf(Color(0xFF00FF41).copy(alpha = l), Color.Transparent)), l * 70.dp.toPx(), center.copy(x = center.x - 40.dp.toPx()))
+        drawCircle(Brush.radialGradient(listOf(Color(0xFF00FF41).copy(alpha = r), Color.Transparent)), r * 70.dp.toPx(), center.copy(x = center.x + 40.dp.toPx()))
+        drawCircle(Brush.radialGradient(listOf(Color(0xFF00FF41).copy(alpha = (l+r)/2f), Color.Transparent)), (l+r) * 40.dp.toPx(), center)
     }
 }
 
@@ -279,44 +375,52 @@ fun CyberGrid(isPlaying: Boolean, energy: Float) {
         val w = size.width; val h = size.height
         for (i in 0..10) {
             val y = (h/10) * i
-            drawLine(Color.Blue.copy(alpha = 0.1f + 0.4f * energy), Offset(0f, y), Offset(w, y), 0.5f)
+            drawLine(Color(0xFF00FF41).copy(alpha = 0.1f + 0.4f * energy), Offset(0f, y), Offset(w, y), 0.5f)
             val x = (w/10) * i
-            drawLine(Color.Blue.copy(alpha = 0.1f + 0.4f * energy), Offset(x, 0f), Offset(x, h), 0.5f)
+            drawLine(Color(0xFF00FF41).copy(alpha = 0.1f + 0.4f * energy), Offset(x, 0f), Offset(x, h), 0.5f)
         }
-        drawCircle(Color.Blue.copy(alpha = energy), 20.dp.toPx() * energy, Offset(w/2, h/2), style = Stroke(2.dp.toPx()))
+        drawCircle(Color(0xFF00FF41).copy(alpha = energy), 20.dp.toPx() * energy, Offset(w/2, h/2), style = Stroke(2.dp.toPx()))
     }
 }
 
 @Composable
 fun PlasmaAura(l: Float, r: Float) {
     Canvas(Modifier.fillMaxSize()) {
-        drawRect(Brush.sweepGradient(listOf(Color.Cyan.copy(alpha = l), Color.Magenta.copy(alpha = r), Color.Cyan.copy(alpha = l))))
+        drawRect(Brush.sweepGradient(listOf(Color(0xFF00FF41).copy(alpha = l), Color(0xFF008F11).copy(alpha = r), Color(0xFF00FF41).copy(alpha = l))))
     }
 }
 
 @Composable
-fun TapeDeckBars(l: Float, r: Float) {
-    Canvas(Modifier.fillMaxSize().padding(15.dp)) {
-        val barH = 10.dp.toPx()
-        drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, 10.dp.toPx()), Size(size.width, barH))
-        drawRect(Color(0xFFFF9800), Offset(0f, 10.dp.toPx()), Size(size.width * l, barH))
-        drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, 30.dp.toPx()), Size(size.width, barH))
-        drawRect(Color(0xFFFF9800), Offset(0f, 30.dp.toPx()), Size(size.width * r, barH))
+fun TapeDeckBars(bandsL: List<Float>, bandsR: List<Float>) {
+    Canvas(Modifier.fillMaxSize().padding(4.dp)) {
+        val barH = size.height / 32f
+        // L
+        for (i in 0 until 15) {
+            val y = i * (barH + 1.dp.toPx())
+            drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, barH))
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.7f), Offset(0f, y), Size(size.width * bandsL[i], barH))
+        }
+        // R
+        for (i in 0 until 15) {
+            val y = (i + 16) * (barH + 1.dp.toPx())
+            drawRect(Color.DarkGray.copy(alpha = 0.3f), Offset(0f, y), Size(size.width, barH))
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.7f), Offset(0f, y), Size(size.width * bandsR[i], barH))
+        }
     }
 }
 
 @Composable
 fun StrobeHit(isPlaying: Boolean, energy: Float) {
-    Box(Modifier.fillMaxSize().background(if (energy > 0.82f) Color.White.copy(alpha = 0.3f * energy) else Color.Transparent))
+    Box(Modifier.fillMaxSize().background(if (energy > 0.82f) Color(0xFF00FF41).copy(alpha = 0.3f * energy) else Color.Transparent))
 }
 
 @Composable
 fun Blocks3D(l: Float, r: Float) {
     Canvas(Modifier.fillMaxSize()) {
         val w = size.width; val h = size.height
-        drawRect(Color.White.copy(alpha = 0.08f), Offset(w*0.05f, h*0.05f), Size(w*0.9f, h*0.9f))
-        drawRect(Color.White.copy(alpha = l), Offset(w*0.2f, h - h*0.85f*l), Size(w*0.25f, h*0.85f * l))
-        drawRect(Color.White.copy(alpha = r), Offset(w*0.55f, h - h*0.85f*r), Size(w*0.25f, h*0.85f * r))
+        drawRect(Color(0xFF00FF41).copy(alpha = 0.08f), Offset(w*0.05f, h*0.05f), Size(w*0.9f, h*0.9f))
+        drawRect(Color(0xFF00FF41).copy(alpha = l), Offset(w*0.2f, h - h*0.85f*l), Size(w*0.25f, h*0.85f * l))
+        drawRect(Color(0xFF00FF41).copy(alpha = r), Offset(w*0.55f, h - h*0.85f*r), Size(w*0.25f, h*0.85f * r))
     }
 }
 
@@ -325,8 +429,8 @@ fun HeartPulse(l: Float, r: Float) {
     val energy = (l + r) / 2f
     Canvas(Modifier.fillMaxSize()) {
         val center = Offset(size.width / 2, size.height / 2)
-        drawCircle(Color.Red.copy(alpha = 0.45f * energy), 5.dp.toPx() + 50.dp.toPx() * energy, center)
-        drawCircle(Color.Red, 4.dp.toPx() + 15.dp.toPx() * energy, center)
+        drawCircle(Color(0xFF00FF41).copy(alpha = 0.45f * energy), 5.dp.toPx() + 50.dp.toPx() * energy, center)
+        drawCircle(Color(0xFF00FF41), 4.dp.toPx() + 15.dp.toPx() * energy, center)
     }
 }
 
@@ -350,7 +454,8 @@ fun Oscilloscope(isPlaying: Boolean, waveform: FloatArray) {
             val path = Path()
             for (i in waveform.indices) {
                 val x = (w / (waveform.size - 1)) * i
-                val y = midY + (waveform[i] * h * 0.92f)
+                // CORTE DE ONDA (CLIPPING)
+                val y = (midY + (waveform[i] * h * 0.92f)).coerceIn(2.dp.toPx(), h - 2.dp.toPx())
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, Color(0xFF00FF41).copy(alpha = 0.35f), style = Stroke(width = 5.5.dp.toPx(), cap = StrokeCap.Round))
@@ -377,8 +482,9 @@ fun VintageOscillator(isPlaying: Boolean, levelL: Float, levelR: Float) {
                 val noise = (Random.nextFloat() - 0.5f) * 18f * combinedEnergy
                 val sine1 = sin(progress * 14f + phase) * 28f * levelL
                 val sine2 = sin(progress * 32f - phase * 2.2f) * 15f * levelR
-                val y = midY + sine1 + sine2 + noise
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, h.coerceAtMost(y.coerceAtLeast(0f)))
+                // CORTE DE ONDA (CLIPPING)
+                val y = (midY + sine1 + sine2 + noise).coerceIn(4.dp.toPx(), h - 4.dp.toPx())
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, phosphorColor.copy(alpha = 0.45f), style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round))
             drawPath(path, phosphorColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
@@ -419,7 +525,7 @@ fun GalaxyVortex(isPlaying: Boolean, l: Float, r: Float) {
             val rad = Math.toRadians(angle.toDouble())
             val dist = 15.dp.toPx() + energy * 40.dp.toPx()
             drawCircle(
-                color = Color.Cyan.copy(alpha = 0.5f * energy),
+                color = Color(0xFF00FF41).copy(alpha = 0.5f * energy),
                 radius = 3.dp.toPx() + energy * 10.dp.toPx(),
                 center = Offset(center.x + cos(rad).toFloat() * dist, center.y + sin(rad).toFloat() * dist)
             )
@@ -428,16 +534,24 @@ fun GalaxyVortex(isPlaying: Boolean, l: Float, r: Float) {
 }
 
 @Composable
-fun SpectrumPeaks(l: Float, r: Float, pl: Float, pr: Float) {
-    Canvas(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 10.dp)) {
+fun SpectrumPeaks(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>) {
+    Canvas(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 4.dp)) {
         val w = size.width; val h = size.height
-        val barW = w / 4f
-        // L Bar
-        drawRect(Color.Green.copy(alpha = 0.3f), Offset(w*0.1f, h - h*l), Size(barW, h*l))
-        drawLine(Color.White, Offset(w*0.1f, h - h*pl), Offset(w*0.1f + barW, h - h*pl), 2.dp.toPx())
-        // R Bar
-        drawRect(Color.Green.copy(alpha = 0.3f), Offset(w*0.6f, h - h*r), Size(barW, h*r))
-        drawLine(Color.White, Offset(w*0.6f, h - h*pr), Offset(w*0.6f + barW, h - h*pr), 2.dp.toPx())
+        val barW = w / 30f
+        // L
+        for (i in 0 until 15) {
+            val level = bandsL[i]
+            val peak = peaksL[i]
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.3f), Offset(i * barW, h - h * level), Size(barW - 2.dp.toPx(), h * level))
+            drawLine(Color(0xFF00FF41), Offset(i * barW, h - h * peak), Offset(i * barW + barW - 2.dp.toPx(), h - h * peak), 2.dp.toPx())
+        }
+        // R
+        for (i in 0 until 15) {
+            val level = bandsR[i]
+            val peak = peaksR[i]
+            drawRect(Color(0xFF00FF41).copy(alpha = 0.5f), Offset((i + 15) * barW, h - h * level), Size(barW - 2.dp.toPx(), h * level))
+            drawLine(Color(0xFF00FF41), Offset((i + 15) * barW, h - h * peak), Offset((i + 15) * barW + barW - 2.dp.toPx(), h - h * peak), 2.dp.toPx())
+        }
     }
 }
 
@@ -452,7 +566,8 @@ fun LimbikFlow(isPlaying: Boolean, l: Float, r: Float) {
         val energy = (l + r) / 2f
         for (i in 0..w.toInt() step 5) {
             val relX = i / w
-            val y = h/2f + sin(relX * 10f + phase) * h * 0.4f * energy
+            // CORTE DE ONDA (CLIPPING)
+            val y = (h/2f + sin(relX * 10f + phase) * h * 0.4f * energy).coerceIn(4.dp.toPx(), h - 4.dp.toPx())
             path.lineTo(i.toFloat(), y)
         }
         drawPath(path, Color(0xFF00FF41), style = Stroke(2.dp.toPx()))
