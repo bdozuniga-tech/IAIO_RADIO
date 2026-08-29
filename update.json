@@ -1,6 +1,6 @@
 {
-  "versionCode": 79,
-  "versionName": "6.9 Bluetooth Car Fix",
+  "versionCode": 80,
+  "versionName": "7.0 Background Control",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 6.9! 🚗 Corregido el error de 'doble salto' al usar los botones del auto o volante por Bluetooth. ¡Navegación más fluida y precisa! ⚡️🎧🏆"
+  "releaseNotes": "¡VERSIÓN 7.0! 🚀 Control total en segundo plano. Ahora puedes cambiar de radio desde el auto incluso con la app minimizada o el celular bloqueado. Arquitectura mejorada para una estabilidad superior. ⚡️🎧🚗🏆"
 }

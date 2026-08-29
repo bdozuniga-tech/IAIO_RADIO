@@ -43,12 +43,37 @@ class PlaybackService : MediaSessionService() {
 
     private fun emitNavEvent(direction: Int) {
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastNavTime > 500) { // Ignorar si el comando llega antes de 500ms (evita el doble salto)
+        if (currentTime - lastNavTime > 600) { 
             lastNavTime = currentTime
-            Log.d("PlaybackService", "Emitiendo navegación: $direction")
-            serviceScope.launch { _navEvent.emit(direction) }
-        } else {
-            Log.d("PlaybackService", "Comando Bluetooth duplicado ignorado (Debounce)")
+            
+            // CAMBIO DE ESTACIÓN DIRECTO EN EL SERVICIO
+            val total = RadioData.stations.size
+            val newIndex = (((internalIndex + direction) % total) + total) % total
+            internalIndex = newIndex
+            val station = RadioData.stations[newIndex]
+            
+            Log.d("PlaybackService", "Cambiando a estación desde segundo plano: ${station.name}")
+            
+            player?.let { p ->
+                val mimeType = if (station.url.contains("m3u8")) MimeTypes.APPLICATION_M3U8 else null
+                val mediaItem = MediaItem.Builder()
+                    .setUri(station.url)
+                    .setMimeType(mimeType)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(station.name)
+                            .setArtist(station.name)
+                            .build()
+                    ).build()
+                p.setMediaItem(mediaItem)
+                p.prepare()
+                p.play()
+            }
+
+            serviceScope.launch { 
+                _navEvent.emit(direction)
+                _currentStationIndexFlow.value = newIndex
+            }
         }
     }
 
@@ -117,6 +142,15 @@ class PlaybackService : MediaSessionService() {
 
         private val _audioSessionId = MutableStateFlow(0)
         val audioSessionId: StateFlow<Int> = _audioSessionId
+
+        private val _currentStationIndexFlow = MutableStateFlow(0)
+        val currentStationIndexFlow: StateFlow<Int> = _currentStationIndexFlow
+
+        private var internalIndex = 0
+        fun updateInternalIndex(index: Int) {
+            internalIndex = index
+            _currentStationIndexFlow.value = index
+        }
 
         val stutterProcessor = StutterAudioProcessor()
         
