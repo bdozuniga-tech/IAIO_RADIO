@@ -1,6 +1,6 @@
 {
-  "versionCode": 88,
-  "versionName": "8.7 Precise Sync Fix",
+  "versionCode": 90,
+  "versionName": "8.9 Memoria Maestro",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡VERSIÓN 8.7! 🎯 Sincronización milimétrica: retrasado el motor de bajos (SUB) para un match perfecto con el audio. ⚡️🎧🏆"
+  "releaseNotes": "¡VERSIÓN 8.9! 🧠 Solucionado el reinicio a Radio 1: Ahora la app siempre recuerda tu estación. 📻 Labgate Alt restaurada al 100%. Estabilidad total en el motor de persistencia. 🚀🔥"
 }

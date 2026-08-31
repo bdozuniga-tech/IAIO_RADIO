@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material3.Text
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
@@ -33,8 +35,11 @@ fun SpectrumVisualizer(
     isPlaying: Boolean, 
     energyL: Float,
     energyR: Float,
+    bandsL: FloatArray,
+    bandsR: FloatArray,
     waveform: FloatArray,
     isMagnetActive: Boolean,
+    isMono: Boolean,
     currentMode: Int,
     onModeChange: (Int) -> Unit
 ) {
@@ -44,15 +49,19 @@ fun SpectrumVisualizer(
     var peakL by remember { mutableFloatStateOf(0f) }
     var peakR by remember { mutableFloatStateOf(0f) }
 
-
-    // ESTADO DE 5 BANDAS POR CANAL (TOTAL 10)
-    var bandsStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
-    var peaksStateL by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
-    var bandsStateR by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
-    var peaksStateR by remember { mutableStateOf(listOf(0f, 0f, 0f, 0f, 0f)) }
+    // ESTADO DE 5 BANDAS CON PEAK HOLD (TOTAL 10)
+    var bandsStateL by remember { mutableStateOf(FloatArray(5) { 0f }) }
+    var peaksStateL by remember { mutableStateOf(FloatArray(5) { 0f }) }
+    var peaksAgeL by remember { mutableStateOf(LongArray(5) { 0L }) }
+    
+    var bandsStateR by remember { mutableStateOf(FloatArray(5) { 0f }) }
+    var peaksStateR by remember { mutableStateOf(FloatArray(5) { 0f }) }
+    var peaksAgeR by remember { mutableStateOf(LongArray(5) { 0L }) }
 
     val currentEnergyL = rememberUpdatedState(energyL)
     val currentEnergyR = rememberUpdatedState(energyR)
+    val currentBandsL = rememberUpdatedState(bandsL)
+    val currentBandsR = rememberUpdatedState(bandsR)
 
     LaunchedEffect(Unit) {
         var lastFrameTimeNanos = 0L
@@ -67,60 +76,53 @@ fun SpectrumVisualizer(
 
                 val el = currentEnergyL.value
                 val er = currentEnergyR.value
+                val bl = currentBandsL.value
+                val br = currentBandsR.value
 
-                val smoothFactor = (0.5f.toDouble().pow((delta * 60).toDouble())).toFloat()
-                val peakFactor = (0.94f.toDouble().pow((delta * 60).toDouble())).toFloat()
+                val smoothFactor = (0.3f.toDouble().pow((delta * 60).toDouble())).toFloat() // Ataque más rápido
+                val peakDecayFactor = (0.96f.toDouble().pow((delta * 60).toDouble())).toFloat() 
 
-                // SIMULACIÓN DE 5 BANDAS GATED (GOLPE EXCLUSIVO POR CATEGORÍA)
-                fun calculateBands(energy: Float): List<Float> {
-                    // SUB: El bombo (Kick) - Activado por Magnet
-                    val sub = if (isMagnetActive) (0.85f + Random.nextFloat() * 0.15f) else energy * 0.1f
-                    
-                    // LOW: El bajo (Bass line) - Activado por energía alta o remanente del Magnet
-                    val low = if (energy > 0.75f || isMagnetActive) (energy * 0.8f + 0.1f) else energy * 0.2f
-                    
-                    // MID: Voces y medios - Se activa solo si hay presencia musical clara
-                    val mid = if (energy > 0.55f) (energy * 0.7f + Random.nextFloat() * 0.2f) else energy * 0.15f
-                    
-                    // HIGH: Cajas y claps - Saltos rápidos y nerviosos
-                    val high = if (energy > 0.65f && Random.nextFloat() > 0.4f) (energy * 0.85f) else energy * 0.1f
-                    
-                    // TREBLE: Platillos y brillo - Destellos intermitentes de alta frecuencia
-                    val treble = if (energy > 0.45f && Random.nextFloat() > 0.6f) (0.7f + Random.nextFloat() * 0.3f) else energy * 0.05f
+                val newBandsL = FloatArray(5)
+                val newPeaksL = peaksStateL.copyOf()
+                val newAgeL = peaksAgeL.copyOf()
+                
+                val newBandsR = FloatArray(5)
+                val newPeaksR = peaksStateR.copyOf()
+                val newAgeR = peaksAgeR.copyOf()
 
-                    return listOf(
-                        sub.coerceIn(0f, 1.2f),
-                        low.coerceIn(0f, 1.2f),
-                        mid.coerceIn(0f, 1.2f),
-                        high.coerceIn(0f, 1.2f),
-                        treble.coerceIn(0f, 1.2f)
-                    )
-                }
-
-                val bandsL = calculateBands(el)
-                val bandsR = calculateBands(er)
-
-                val newBandsL = bandsStateL.toMutableList()
-                val newPeaksL = peaksStateL.toMutableList()
-                val newBandsR = bandsStateR.toMutableList()
-                val newPeaksR = peaksStateR.toMutableList()
+                val now = System.currentTimeMillis()
 
                 for (i in 0 until 5) {
-                    val targetL = bandsL[i].coerceIn(0f, 1.2f)
-                    newBandsL[i] = if (targetL > newBandsL[i]) targetL else newBandsL[i] * smoothFactor + targetL * (1f - smoothFactor)
-                    if (targetL > newPeaksL[i]) newPeaksL[i] = targetL
-                    newPeaksL[i] *= peakFactor
+                    // LEFT CHANNEL
+                    val targetL = bl[i]
+                    newBandsL[i] = if (targetL > bandsStateL[i]) targetL else bandsStateL[i] * smoothFactor + targetL * (1f - smoothFactor)
+                    
+                    if (targetL >= newPeaksL[i]) {
+                        newPeaksL[i] = targetL
+                        newAgeL[i] = now + 400 // Hold for 400ms
+                    } else if (now > newAgeL[i]) {
+                        newPeaksL[i] *= peakDecayFactor
+                    }
 
-                    val targetR = bandsR[i].coerceIn(0f, 1.2f)
-                    newBandsR[i] = if (targetR > newBandsR[i]) targetR else newBandsR[i] * smoothFactor + targetR * (1f - smoothFactor)
-                    if (targetR > newPeaksR[i]) newPeaksR[i] = targetR
-                    newPeaksR[i] *= peakFactor
+                    // RIGHT CHANNEL
+                    val targetR = if (isMono) targetL else br[i]
+                    newBandsR[i] = if (targetR > bandsStateR[i]) targetR else bandsStateR[i] * smoothFactor + targetR * (1f - smoothFactor)
+                    
+                    if (targetR >= newPeaksR[i]) {
+                        newPeaksR[i] = targetR
+                        newAgeR[i] = now + 400
+                    } else if (now > newAgeR[i]) {
+                        newPeaksR[i] *= peakDecayFactor
+                    }
                 }
                 
                 bandsStateL = newBandsL
                 peaksStateL = newPeaksL
+                peaksAgeL = newAgeL
+                
                 bandsStateR = newBandsR
                 peaksStateR = newPeaksR
+                peaksAgeR = newAgeR
 
                 if (el > 0.001f || er > 0.001f) {
                     smoothL = if (el > smoothL) el else smoothL * smoothFactor + el * (1f - smoothFactor)
@@ -132,8 +134,8 @@ fun SpectrumVisualizer(
                     smoothL *= decayFactor
                     smoothR *= decayFactor
                 }
-                peakL *= peakFactor
-                peakR *= peakFactor
+                peakL *= peakDecayFactor
+                peakR *= peakDecayFactor
             }
         }
     }
@@ -148,41 +150,48 @@ fun SpectrumVisualizer(
             .background(Color.Black.copy(alpha = 0.4f))
             .border(0.5.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
             .pointerInput(currentMode) {
-                detectTapGestures(onDoubleTap = {
-                    onModeChange((currentMode + 1) % totalModes)
-                    vibratePhone(context, 20)
+                detectTapGestures(onDoubleTap = { offset ->
+                    // Navegación Circular Izquierda/Derecha
+                    val isLeft = offset.x < size.width / 2f
+                    val newMode = if (isLeft) {
+                        (currentMode - 1 + totalModes) % totalModes
+                    } else {
+                        (currentMode + 1) % totalModes
+                    }
+                    onModeChange(newMode)
+                    vibratePhone(context, 35) // Vibración un poco más fuerte para el gesto
                 })
             },
         contentAlignment = Alignment.Center
     ) {
         when (currentMode) {
-            0 -> DigitalLedBars(bandsStateL, peaksStateL, bandsStateR, peaksStateR)
+            0 -> DigitalLedBars(bandsStateL.toList(), peaksStateL.toList(), bandsStateR.toList(), peaksStateR.toList(), isMono)
             1 -> VintageOscillator(isPlaying, smoothL, smoothR)
             2 -> Oscilloscope(isPlaying, waveform)
             3 -> AnalogVU(smoothL, smoothR)
-            4 -> ChunkyBars(bandsStateL, bandsStateR)
+            4 -> ChunkyBars(bandsStateL.toList(), bandsStateR.toList())
             5 -> NeonWave(isPlaying, waveform, smoothL)
             6 -> RadialPips(smoothL, smoothR)
             7 -> MirrorWave(waveform, smoothL)
             8 -> MatrixRain(isPlaying, smoothL)
             9 -> LazerSpikes(waveform, smoothL)
-            10 -> DotMatrix(bandsStateL, bandsStateR)
+            10 -> DotMatrix(bandsStateL.toList(), bandsStateR.toList())
             11 -> FluidCurve(isPlaying, smoothL, smoothR)
             12 -> RGBGlow(smoothL, smoothR)
             13 -> CyberGrid(isPlaying, smoothL)
             14 -> PlasmaAura(smoothL, smoothR)
-            15 -> TapeDeckBars(bandsStateL, bandsStateR)
+            15 -> TapeDeckBars(bandsStateL.toList(), bandsStateR.toList())
             16 -> StrobeHit(isPlaying, smoothL)
             17 -> Blocks3D(smoothL, smoothR)
             18 -> HeartPulse(smoothL, smoothR)
             19 -> SonarRadar(isPlaying, smoothL)
             20 -> GalaxyVortex(isPlaying, smoothL, smoothR)
-            21 -> SpectrumPeaks(bandsStateL, peaksStateL, bandsStateR, peaksStateR)
+            21 -> SpectrumPeaks(bandsStateL.toList(), peaksStateL.toList(), bandsStateR.toList(), peaksStateR.toList())
             22 -> LimbikFlow(isPlaying, smoothL, smoothR)
         }
         
         androidx.compose.material3.Text(
-            text = "MODE ${currentMode + 1}",
+            text = if (isMono) "MODE ${currentMode + 1} • MONO" else "MODE ${currentMode + 1} • STEREO",
             color = Color.White.copy(alpha = 0.12f),
             fontSize = 7.sp,
             fontWeight = FontWeight.Black,
@@ -192,28 +201,127 @@ fun SpectrumVisualizer(
 }
 
 @Composable
-fun DigitalLedBars(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>) {
-    Row(Modifier.fillMaxSize().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            androidx.compose.material3.Text("L-CHANNEL", color = Color(0xFF00FF41).copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(6.dp))
-            LedBar(label = "SUB", level = bandsL[0], peakLevel = peaksL[0])
-            LedBar(label = "LOW", level = bandsL[1], peakLevel = peaksL[1])
-            LedBar(label = "MID", level = bandsL[2], peakLevel = peaksL[2])
-            LedBar(label = "HIGH", level = bandsL[3], peakLevel = peaksL[3])
-            LedBar(label = "TREB", level = bandsL[4], peakLevel = peaksL[4])
+fun DigitalLedBars(bandsL: List<Float>, peaksL: List<Float>, bandsR: List<Float>, peaksR: List<Float>, isMono: Boolean) {
+    val labels = listOf("SUB", "LOW", "MID", "HIGH", "TREB")
+    
+    Column(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+        // CABECERA L/R
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            Text(
+                text = "LEFT CHANNEL",
+                color = Color(0xFF00FF41).copy(alpha = 0.8f),
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.Center
+            )
+            if (!isMono) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "RIGHT CHANNEL",
+                    color = Color(0xFF00FF41).copy(alpha = 0.8f),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            androidx.compose.material3.Text("R-CHANNEL", color = Color(0xFF00FF41).copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(6.dp))
-            LedBar(label = "SUB", level = bandsR[0], peakLevel = peaksR[0])
-            LedBar(label = "LOW", level = bandsR[1], peakLevel = peaksR[1])
-            LedBar(label = "MID", level = bandsR[2], peakLevel = peaksR[2])
-            LedBar(label = "HIGH", level = bandsR[3], peakLevel = peaksR[3])
-            LedBar(label = "TREB", level = bandsR[4], peakLevel = peaksR[4])
+
+        // CUERPO DE BARRAS
+        Row(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            // CANAL L
+            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                labels.forEachIndexed { i, label ->
+                    VerticalLedBar(
+                        modifier = Modifier.weight(1f),
+                        label = label,
+                        level = bandsL[i],
+                        peak = peaksL[i],
+                        color = Color(0xFF00FF41)
+                    )
+                }
+            }
+            
+            if (!isMono) {
+                Spacer(Modifier.width(8.dp).background(Color.White.copy(alpha = 0.05f)))
+                
+                // CANAL R
+                Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    labels.forEachIndexed { i, label ->
+                        VerticalLedBar(
+                            modifier = Modifier.weight(1f),
+                            label = label,
+                            level = bandsR[i],
+                            peak = peaksR[i],
+                            color = Color(0xFF00FF41)
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+@Composable
+fun VerticalLedBar(modifier: Modifier, label: String, level: Float, peak: Float, color: Color) {
+    val ledCount = 22 // Más resolución vertical
+    Column(
+        modifier = modifier.fillMaxHeight(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val ledH = (h / ledCount) * 0.75f
+                val spacing = (h / ledCount) * 0.25f
+                
+                for (i in 0 until ledCount) {
+                    val ledLevel = i.toFloat() / ledCount
+                    val isActive = level > ledLevel
+                    // El peak es un único LED flotante
+                    val isPeakLed = peak >= ledLevel && peak < (ledLevel + 1f/ledCount)
+                    
+                    val baseColor = when {
+                        i > ledCount * 0.85 -> Color.Red     // Zona de saturación
+                        i > ledCount * 0.65 -> Color.Yellow  // Zona de advertencia
+                        else -> color                         // Zona segura (IAIO Green)
+                    }
+                    
+                    val finalColor = when {
+                        isActive -> baseColor
+                        isPeakLed -> baseColor.copy(alpha = 0.95f) // LED flotante brillante
+                        else -> baseColor.copy(alpha = 0.08f)      // LED apagado (fantasma)
+                    }
+                    
+                    drawRoundRect(
+                        color = finalColor,
+                        topLeft = Offset(0f, h - (i + 1) * (ledH + spacing)),
+                        size = Size(w, ledH),
+                        cornerRadius = CornerRadius(1.dp.toPx())
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 5.sp, // Fuente ultra-compacta para responsividad
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+// ELIMINACIÓN DE FUNCIONES ANTIGUAS E INNECESARIAS PARA LIMPIEZA
+// (Se mantienen el resto de modos visuales solicitados)
+
 
 @Composable
 fun BandGroupLabel(text: String) {
@@ -493,8 +601,16 @@ fun VintageOscillator(isPlaying: Boolean, levelL: Float, levelR: Float) {
 fun LedBar(label: String, level: Float, peakLevel: Float) {
     val ledCount = 42
     Row(verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.material3.Text(text = label, color = Color.White.copy(alpha = 0.6f), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
-        Canvas(modifier = Modifier.weight(1f).height(12.dp)) {
+        androidx.compose.material3.Text(
+            text = label, 
+            color = Color.White.copy(alpha = 0.6f), 
+            fontSize = 7.sp, 
+            fontWeight = FontWeight.Bold, 
+            modifier = Modifier.width(32.dp),
+            maxLines = 1,
+            softWrap = false
+        )
+        Canvas(modifier = Modifier.weight(1f).height(9.dp)) {
             val width = size.width; val height = size.height
             val ledWidth = (width / ledCount) * 0.7f; val spacing = (width / ledCount) * 0.3f
             for (i in 0 until ledCount) {
@@ -502,7 +618,7 @@ fun LedBar(label: String, level: Float, peakLevel: Float) {
                 val isActive = level > ledLevel; val isPeak = (peakLevel > ledLevel && peakLevel < ledLevel + (1f / ledCount))
                 val baseColor = when { i < ledCount * 0.5 -> Color(0xFF00FF00); i < ledCount * 0.8 -> Color(0xFFFFFF00); else -> Color(0xFFFF0000) }
                 val finalColor = if (isActive) baseColor else if (isPeak) baseColor.copy(alpha = 0.95f) else baseColor.copy(alpha = 0.15f)
-                drawRoundRect(color = finalColor, topLeft = Offset(i * (ledWidth + spacing), 0f), size = Size(ledWidth, height), cornerRadius = CornerRadius(1.2.dp.toPx()))
+                drawRoundRect(color = finalColor, topLeft = Offset(i * (ledWidth + spacing), 0f), size = Size(ledWidth, height), cornerRadius = CornerRadius(1.dp.toPx()))
             }
         }
     }

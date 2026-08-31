@@ -168,9 +168,10 @@ object RadioData {
         ),
         RadioStation(
             name = "LABGATE ALT",
-            url = "https://shoutcast.labgate.net:443/alt-rock",
+            url = "https://s2.ssl-stream.com/listen/labgate_alt_rock_grunge/stream",
             backgroundColor = Color.Black,
-            logoUrl = "https://labgate.net/img/labgate_logo_300.png"
+            logoUrl = "https://labgate.net/img/labgate_logo_300.png",
+            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_alt_rock_grunge"
         ),
         RadioStation(
             name = "LA ROCKA 80",

@@ -161,7 +161,15 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     val initialPage = (Int.MAX_VALUE / 2 / radioStations.size) * radioStations.size + savedIndex
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
     
-    var isPlayingState by remember { mutableStateOf(true) }
+    // Sincronizar el scroll inicial con el índice guardado (DOBLE CHEQUEO ANTI-RESET)
+    LaunchedEffect(Unit) {
+        val actualIndexInPager = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
+        if (actualIndexInPager != savedIndex) {
+            pagerState.scrollToPage(initialPage)
+        }
+    }
+    
+    var isPlayingState by remember { mutableStateOf(prefs.getBoolean("last_playing_state", true)) }
     var countdownProgress by remember { mutableFloatStateOf(0f) }
     var isCountdownActive by remember { mutableStateOf(false) }
     var isStartingActive by remember { mutableStateOf(false) } 
@@ -196,60 +204,79 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     // SINCRONIZACIÓN DE NAVEGACIÓN BLUETOOTH (AVRCP NEXT/PREVIOUS)
     LaunchedEffect(player) {
         PlaybackService.currentStationIndexFlow.collect { index ->
+            if (index == -1) return@collect // Ignorar estado inicial no establecido
+            
             val total = radioStations.size
             if (total > 0) {
-                // Sincronizar el Pager con el índice del servicio
                 val currentPage = pagerState.currentPage
                 val currentActualIndex = ((currentPage % total) + total) % total
                 if (currentActualIndex != index) {
                     val diff = index - currentActualIndex
-                    // Ajustamos para que el scroll sea hacia el lado más corto o natural
                     pagerState.animateScrollToPage(currentPage + diff)
                 }
             }
         }
     }
 
-    // SINCRONIZACIÓN DE AUDIO Y VISUALES (Compensación de Latencia de 140ms)
-    
+    // SINCRONIZACIÓN DE AUDIO Y VISUALES
     val currentBpm by PlaybackService.currentBpm.collectAsState()
-    val isMagnetActive by PlaybackService.isMagnetActive.collectAsState()
     val isCalibrated by PlaybackService.isCalibrated.collectAsState()
     val calibrationCountdown by PlaybackService.calibrationCountdown.collectAsState()
+    val isMono by PlaybackService.isMonoFlow.collectAsState()
 
-    // Sistema de Buffer para sincronizar visuales (SINCRO REAL: 200ms para match perfecto con altavoz/BT)
-    var delayedEnergyL by remember { mutableFloatStateOf(0f) }
-    var delayedEnergyR by remember { mutableFloatStateOf(0f) }
-    var delayedWaveform by remember { mutableStateOf(FloatArray(128) { 0f }) }
-    var delayedMagnetActive by remember { mutableStateOf(false) }
+    var syncedEnergyL by remember { mutableFloatStateOf(0f) }
+    var syncedEnergyR by remember { mutableFloatStateOf(0f) }
+    var syncedBandsL by remember { mutableStateOf(FloatArray(5) { 0f }) }
+    var syncedBandsR by remember { mutableStateOf(FloatArray(5) { 0f }) }
+    var syncedWaveform by remember { mutableStateOf(FloatArray(128) { 0f }) }
+    var syncedMagnetActive by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    // Sistema de Buffer para sincronizar visuales (SINCRO MAESTRA JEDI)
+    // Keyed on currentPage para que al cambiar de radio las listas se VACIEN AL INSTANTE (0%)
+    LaunchedEffect(pagerState.currentPage) {
         val historyL = mutableListOf<Pair<Long, Float>>()
         val historyR = mutableListOf<Pair<Long, Float>>()
+        val historyBandsL = mutableListOf<Pair<Long, FloatArray>>()
+        val historyBandsR = mutableListOf<Pair<Long, FloatArray>>()
         val historyWave = mutableListOf<Pair<Long, FloatArray>>()
         val historyMagnet = mutableListOf<Pair<Long, Boolean>>()
 
+        // Reset inmediato de los valores al cambiar de página
+        syncedEnergyL = 0f
+        syncedEnergyR = 0f
+        syncedBandsL = FloatArray(5) { 0f }
+        syncedBandsR = FloatArray(5) { 0f }
+        syncedWaveform = FloatArray(128) { 0f }
+        syncedMagnetActive = false
+
         while (true) {
             val now = System.currentTimeMillis()
-            historyL.add(now to PlaybackService.currentEnergyL.value)
-            historyR.add(now to PlaybackService.currentEnergyR.value)
-            historyWave.add(now to PlaybackService.currentWaveform.value)
-            historyMagnet.add(now to PlaybackService.isMagnetActive.value)
+            historyL.add(now to PlaybackService.energyPeakLFlow.value)
+            historyR.add(now to PlaybackService.energyPeakRFlow.value)
+            historyBandsL.add(now to PlaybackService.bandEnergyLFlow.value)
+            historyBandsR.add(now to PlaybackService.bandEnergyRFlow.value)
+            historyWave.add(now to PlaybackService.waveformFlow.value)
+            historyMagnet.add(now to PlaybackService.isMagnetActiveFlow.value)
             
-            // Subimos a 200ms: El punto dulce para la latencia de sistema y Bluetooth
             val targetDelay = 200 
             
             while (historyL.isNotEmpty() && now - historyL.first().first > targetDelay) {
-                delayedEnergyL = historyL.removeAt(0).second
+                syncedEnergyL = historyL.removeAt(0).second
             }
             while (historyR.isNotEmpty() && now - historyR.first().first > targetDelay) {
-                delayedEnergyR = historyR.removeAt(0).second
+                syncedEnergyR = historyR.removeAt(0).second
+            }
+            while (historyBandsL.isNotEmpty() && now - historyBandsL.first().first > targetDelay) {
+                syncedBandsL = historyBandsL.removeAt(0).second
+            }
+            while (historyBandsR.isNotEmpty() && now - historyBandsR.first().first > targetDelay) {
+                syncedBandsR = historyBandsR.removeAt(0).second
             }
             while (historyWave.isNotEmpty() && now - historyWave.first().first > targetDelay) {
-                delayedWaveform = historyWave.removeAt(0).second
+                syncedWaveform = historyWave.removeAt(0).second
             }
             while (historyMagnet.isNotEmpty() && now - historyMagnet.first().first > targetDelay) {
-                delayedMagnetActive = historyMagnet.removeAt(0).second
+                syncedMagnetActive = historyMagnet.removeAt(0).second
             }
             delay(1) 
         }
@@ -259,6 +286,10 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         prefs.edit().putInt("last_vis_mode", visMode).apply()
     }
 
+    LaunchedEffect(isPlayingState) {
+        prefs.edit().putBoolean("last_playing_state", isPlayingState).apply()
+    }
+
     LaunchedEffect(pagerState.currentPage) {
         val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
         prefs.edit().putInt("last_station_index", actualIndex).apply()
@@ -266,27 +297,19 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     }
 
     LaunchedEffect(isAluminumMode) { prefs.edit().putBoolean("is_aluminum", isAluminumMode).apply() }
-    // GlobalSettings ya no es necesario aquí ponrque visMode se maneja localmente
+    LaunchedEffect(isOscillatorMode) { prefs.edit().putBoolean("is_oscillator", isOscillatorMode).apply() }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { 
                 isPlayingState = isPlaying 
                 if (!isPlaying) isStartingActive = false
-                Log.d("RadioApp", "Playback state: $isPlaying")
             }
             override fun onPlayerError(error: PlaybackException) { 
                 Log.e("RadioApp", "Player Error: ${error.message}", error)
             }
             override fun onPlaybackStateChanged(state: Int) {
-                val stateName = when(state) {
-                    Player.STATE_IDLE -> "IDLE"
-                    Player.STATE_BUFFERING -> "BUFFERING"
-                    Player.STATE_READY -> "READY"
-                    Player.STATE_ENDED -> "ENDED"
-                    else -> "UNKNOWN"
-                }
-                Log.d("RadioApp", "ExoPlayer State: $stateName")
+                Log.d("RadioApp", "ExoPlayer State: $state")
             }
         }
         player?.addListener(listener)
@@ -338,15 +361,14 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
         val station = radioStations[actualIndex]
         
-        // Sincronizar el índice del servicio cuando el usuario hace scroll manual
         PlaybackService.updateInternalIndex(actualIndex)
         
-        Log.e("RadioApp", "VER: 6.5-LOCAL - Selected: ${station.name} - API: ${station.apiUrl}")
         radioViewModel.startPolling(station.apiUrl, station.shortcode, station.name)
         val currentUri = currentPlayer.currentMediaItem?.localConfiguration?.uri?.toString()
         if (currentUri == station.url && currentPlayer.playbackState != Player.STATE_IDLE) return@LaunchedEffect
         currentPlayer.stop()
         currentPlayer.clearMediaItems()
+        PlaybackService.stutterProcessor.resetVisualPeaks()
         if (station.url.isNotEmpty()) {
             val mimeType = if (station.url.contains("m3u8")) MimeTypes.APPLICATION_M3U8 else null
             val mediaItem = MediaItem.Builder()
@@ -360,7 +382,9 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 ).build()
             currentPlayer.setMediaItem(mediaItem)
             currentPlayer.prepare()
-            currentPlayer.play()
+            if (isPlayingState) {
+                currentPlayer.play()
+            }
         }
     }
 
@@ -421,10 +445,13 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 isCountdownActive = isCountdownActive, 
                 onPauseRequest = { isCountdownActive = true }, 
                 bpm = currentBpm, 
-                realEnergyL = if (isPlayingState || isCountdownActive) delayedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                realEnergyR = if (isPlayingState || isCountdownActive) delayedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                realWaveform = delayedWaveform,
-                isMagnetActive = delayedMagnetActive, 
+                realEnergyL = if (isPlayingState || isCountdownActive) syncedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                realEnergyR = if (isPlayingState || isCountdownActive) syncedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                realBandsL = syncedBandsL,
+                realBandsR = syncedBandsR,
+                realWaveform = syncedWaveform,
+                isMagnetActive = syncedMagnetActive, 
+                isMono = isMono,
                 isCalibrated = isCalibrated, 
                 calibrationCountdown = calibrationCountdown, 
                 player = player, 
@@ -473,9 +500,9 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val pulse = if (currentBpm > 0) 60000 / currentBpm else 800
             val anim = rememberInfiniteTransition(label = "iaioLiveAnim")
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
-            val signatureColor = if (isMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
+            val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v8.4 (vCode 85) • MEJORAS: Sincronización Audio/Visual Perfecta (160ms Delay) • 30 Bandas EQ • bdozuniga@gmail.com..... " else "IAIO", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v8.8 (vCode 89) • MEJORAS: Anti-Saturación Dynamic Pro • SUB/LOW Headroom • Sincro Maestro 200ms • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
@@ -522,7 +549,7 @@ fun DefaultVinyl(referentialUrl: String?, isAluminum: Boolean) {
 
 @OptIn(UnstableApi::class)
 @Composable
-fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realWaveform: FloatArray, isMagnetActive: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String) {
+fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realBandsL: FloatArray, realBandsR: FloatArray, realWaveform: FloatArray, isMagnetActive: Boolean, isMono: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String) {
     val context = LocalContext.current
     var currentRotation by remember { mutableStateOf(0f) }
     var isTouching by remember { mutableStateOf(false) }
@@ -629,7 +656,18 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
             }
             Spacer(modifier = Modifier.height(24.dp))
             Box(modifier = Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
-                if (isActive) SpectrumVisualizer(isPlaying = isPlaying, energyL = realEnergyL, energyR = realEnergyR, waveform = realWaveform, isMagnetActive = isMagnetActive, currentMode = visMode, onModeChange = onModeChange) 
+                if (isActive) SpectrumVisualizer(
+                    isPlaying = isPlaying, 
+                    energyL = realEnergyL, 
+                    energyR = realEnergyR, 
+                    bandsL = realBandsL,
+                    bandsR = realBandsR,
+                    waveform = realWaveform, 
+                    isMagnetActive = isMagnetActive, 
+                    isMono = isMono,
+                    currentMode = visMode, 
+                    onModeChange = onModeChange
+                ) 
             }
             Spacer(modifier = Modifier.height(24.dp))
             val beatDuration = if (bpm > 0) 60000 / bpm else 500

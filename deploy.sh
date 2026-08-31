@@ -12,6 +12,7 @@ if [ $? -eq 0 ]; then
 
     # 2. Mover y renombrar APK
     cp app/build/outputs/apk/debug/app-debug.apk test.apk
+    cp app/build/outputs/apk/debug/app-debug.apk iaio_radio.apk
 
     # 3. Subir a GitHub
     echo "📤  Subiendo mambo a GitHub..."

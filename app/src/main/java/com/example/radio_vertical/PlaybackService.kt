@@ -90,6 +90,7 @@ class PlaybackService : MediaLibraryService() {
                 p.setMediaItem(mediaItem)
                 p.prepare()
                 p.play()
+                stutterProcessor.resetVisualPeaks()
             }
 
             serviceScope.launch { 
@@ -189,7 +190,7 @@ class PlaybackService : MediaLibraryService() {
         private val _audioSessionId = MutableStateFlow(0)
         val audioSessionId: StateFlow<Int> = _audioSessionId
 
-        private val _currentStationIndexFlow = MutableStateFlow(0)
+        private val _currentStationIndexFlow = MutableStateFlow(-1)
         val currentStationIndexFlow: StateFlow<Int> = _currentStationIndexFlow
 
         private var internalIndex = 0
@@ -201,17 +202,25 @@ class PlaybackService : MediaLibraryService() {
         val stutterProcessor = StutterAudioProcessor()
         
         val currentBpm: StateFlow<Int> = stutterProcessor.bpmFlow
-        val currentEnergyL: StateFlow<Float> = stutterProcessor.energyPeakLFlow
-        val currentEnergyR: StateFlow<Float> = stutterProcessor.energyPeakRFlow
-        val isMagnetActive: StateFlow<Boolean> = stutterProcessor.magnetActiveFlow
+        val energyPeakLFlow: StateFlow<Float> = stutterProcessor.energyPeakLFlow
+        val energyPeakRFlow: StateFlow<Float> = stutterProcessor.energyPeakRFlow
+        val bandEnergyLFlow: StateFlow<FloatArray> = stutterProcessor.bandEnergyLFlow
+        val bandEnergyRFlow: StateFlow<FloatArray> = stutterProcessor.bandEnergyRFlow
+        val isMonoFlow: StateFlow<Boolean> = stutterProcessor.isMonoFlow
+        val isMagnetActiveFlow: StateFlow<Boolean> = stutterProcessor.magnetActiveFlow
         val isCalibrated: StateFlow<Boolean> = stutterProcessor.isCalibratedFlow
         val calibrationCountdown: StateFlow<Int> = stutterProcessor.calibrationCountdownFlow
-        val currentWaveform: StateFlow<FloatArray> = stutterProcessor.waveformFlow
+        val waveformFlow: StateFlow<FloatArray> = stutterProcessor.waveformFlow
     }
 
     override fun onCreate() {
         super.onCreate()
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        
+        // CARGAR ÚLTIMO ÍNDICE GUARDADO PARA EVITAR RESET A RADIO 1
+        val prefs = getSharedPreferences("ia_radio_prefs", Context.MODE_PRIVATE)
+        internalIndex = prefs.getInt("last_station_index", 0)
+        _currentStationIndexFlow.value = internalIndex
         
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
@@ -225,7 +234,7 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        // Configuración de DataSource optimizada para evitar cortes en Redirects
+        // Configuración de DataSource optimizada (ia-radio-engine/1.0)
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("ia-radio-engine/1.0") 
             .setAllowCrossProtocolRedirects(true)

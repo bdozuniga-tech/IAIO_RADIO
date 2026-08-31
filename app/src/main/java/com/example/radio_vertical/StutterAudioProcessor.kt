@@ -10,11 +10,10 @@ import java.nio.ShortBuffer
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * Motor de Audio Radio Vertical - Ultra Hi-Fi Pro Looper (V18).
- * Sincronización rítmica perfecta con interpolación de alta calidad.
- * Corrección del analizador de espectro (Normalización dinámica).
+ * Motor de Audio Radio Vertical - Estabilizado y calibrado (V21).
  */
 @UnstableApi
 class StutterAudioProcessor : BaseAudioProcessor() {
@@ -58,10 +57,17 @@ class StutterAudioProcessor : BaseAudioProcessor() {
     val bpmFlow = MutableStateFlow(0)
     val energyPeakLFlow = MutableStateFlow(0f)
     val energyPeakRFlow = MutableStateFlow(0f)
+    val bandEnergyLFlow = MutableStateFlow(FloatArray(5) { 0f })
+    val bandEnergyRFlow = MutableStateFlow(FloatArray(5) { 0f })
     val waveformFlow = MutableStateFlow(FloatArray(128) { 0f })
+    
+    val isMonoFlow = MutableStateFlow(true)
     
     private var energySumL = 0f
     private var energySumR = 0f
+    private var diffSum = 0f
+    private var bandSumsL = FloatArray(5) { 0f }
+    private var bandSumsR = FloatArray(5) { 0f }
     private var sampleCount = 0
     private var peakDetected = false 
     
@@ -71,10 +77,39 @@ class StutterAudioProcessor : BaseAudioProcessor() {
     private var lastMeasuredIntervalShorts = 0
     private var lastPeakPos = 0
 
-    // Nueva variable para normalización automática "Estilo Limbik"
     private var visualPeakL = 5000f
     private var visualPeakR = 5000f
+    private val bandPeaksL = FloatArray(5) { 4000f }
+    private val bandPeaksR = FloatArray(5) { 4000f }
 
+    // ESTADOS DE FILTROS IIR (BANCO DE FRECUENCIAS)
+    private var lp80L = 0f; private var lp80R = 0f
+    private var lp250L = 0f; private var lp250R = 0f
+    private var lp2500L = 0f; private var lp2500R = 0f
+    private var lp7000L = 0f; private var lp7000R = 0f
+
+    fun resetVisualPeaks() {
+        synchronized(lock) {
+            visualPeakL = 5000f
+            visualPeakR = 5000f
+            bandPeaksL.fill(4000f)
+            bandPeaksR.fill(4000f)
+            energyPeakLFlow.value = 0f
+            energyPeakRFlow.value = 0f
+            bandEnergyLFlow.value = FloatArray(5) { 0f }
+            bandEnergyRFlow.value = FloatArray(5) { 0f }
+            waveformFlow.value = FloatArray(128) { 0f }
+            magnetActiveFlow.value = false
+            lastMagnetActiveTime = 0L
+            diffSum = 0f
+            isMonoFlow.value = true
+            // Reset filtros
+            lp80L = 0f; lp80R = 0f; lp250L = 0f; lp250R = 0f
+            lp2500L = 0f; lp2500R = 0f; lp7000L = 0f; lp7000R = 0f
+        }
+    }
+
+    private var lastMagnetActiveTime = 0L
     private var calibrationStartTime = 0L
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
@@ -256,7 +291,7 @@ class StutterAudioProcessor : BaseAudioProcessor() {
             output.flip()
             inputBuffer.position(inputBuffer.limit())
             
-            magnetActiveFlow.value = peakDetected && isCalibratedFlow.value
+            magnetActiveFlow.value = (System.currentTimeMillis() - lastMagnetActiveTime < 120) && isCalibratedFlow.value
         }
     }
 
@@ -269,23 +304,51 @@ class StutterAudioProcessor : BaseAudioProcessor() {
 
         var maxL = 0f
         var maxR = 0f
+        
+        bandSumsL.fill(0f)
+        bandSumsR.fill(0f)
+        var bufferSamples = 0
 
         while (shorts.hasRemaining()) {
-            val sampleL = abs(shorts.get().toInt()).toFloat()
-            if (sampleL > maxL) maxL = sampleL
+            val rawL = shorts.get().toFloat() * streamingVolume
+            val absL = abs(rawL)
+            if (absL > maxL) maxL = absL
             
-            val sampleR = if (channels > 1 && shorts.hasRemaining()) {
-                abs(shorts.get().toInt()).toFloat()
-            } else sampleL
-            if (sampleR > maxR) maxR = sampleR
+            val rawR = if (channels > 1 && shorts.hasRemaining()) {
+                shorts.get().toFloat() * streamingVolume
+            } else rawL
+            val absR = abs(rawR)
+            if (absR > maxR) maxR = absR
+
+            // BANCO DE FILTROS IIR (Análisis de Frecuencia Real)
+            // Coeficientes alpha para 44.1kHz: 80Hz(0.011), 250Hz(0.034), 2.5kHz(0.26), 7kHz(0.50)
+            lp80L += 0.011f * (rawL - lp80L); lp80R += 0.011f * (rawR - lp80R)
+            lp250L += 0.034f * (rawL - lp250L); lp250R += 0.034f * (rawR - lp250R)
+            lp2500L += 0.262f * (rawL - lp2500L); lp2500R += 0.262f * (rawR - lp2500R)
+            lp7000L += 0.499f * (rawL - lp7000L); lp7000R += 0.499f * (rawR - lp7000R)
+
+            // Extracción de bandas por sustracción
+            bandSumsL[0] += abs(lp80L)                     // SUB
+            bandSumsL[1] += abs(lp250L - lp80L)            // LOW
+            bandSumsL[2] += abs(lp2500L - lp250L)          // MID
+            bandSumsL[3] += abs(lp7000L - lp2500L)         // HIGH
+            bandSumsL[4] += abs(rawL - lp7000L)            // TREBLE
+
+            bandSumsR[0] += abs(lp80R)
+            bandSumsR[1] += abs(lp250R - lp80R)
+            bandSumsR[2] += abs(lp2500R - lp250R)
+            bandSumsR[3] += abs(lp7000R - lp2500R)
+            bandSumsR[4] += abs(rawR - lp7000R)
             
-            energySumL += sampleL
-            energySumR += sampleR
+            energySumL += absL
+            energySumR += absR
+            diffSum += abs(rawL - rawR)
             sampleCount++
+            bufferSamples++
             
             if (sampleCount >= 256) {
                 val curAvg = (energySumL + energySumR) / (sampleCount * 2f)
-                if (curAvg > averageEnergy * 1.5f) { 
+                if (curAvg > averageEnergy * 1.35f) { 
                     val now = System.currentTimeMillis()
                     val interval = now - lastPeakTime
                     if (interval in 300..1200) {
@@ -297,25 +360,63 @@ class StutterAudioProcessor : BaseAudioProcessor() {
                     lastPeakTime = now
                     lastPeakPos = writePositionShorts
                     peakDetected = true
+                    lastMagnetActiveTime = now
                 }
                 averageEnergy = averageEnergy * 0.94f + curAvg * 0.06f 
                 energySumL = 0f; energySumR = 0f; sampleCount = 0
             }
         }
-        
-        // NORMALIZACIÓN "CALIBRACIÓN LIMBIK" (V84)
-        // Usamos un seguimiento de picos más lento y estable (0.996f)
-        // Esto crea un divisor más sólido que no "rebota" tanto con el ruido
-        visualPeakL = max(visualPeakL * 0.996f, maxL)
-        visualPeakR = max(visualPeakR * 0.996f, maxR)
-        
-        val minDivisor = 4500f
-        // Mapeo lineal pero con una base de referencia muy estable
-        // Esto permite que el movimiento sea fluido y no se quede pegado arriba
-        energyPeakLFlow.value = (maxL / visualPeakL.coerceAtLeast(minDivisor)).coerceIn(0f, 1.0f)
-        energyPeakRFlow.value = (maxR / visualPeakR.coerceAtLeast(minDivisor)).coerceIn(0f, 1.0f)
 
-        // Waveform para Osciloscopio
+        // ACTUALIZACIÓN DE BANDAS AL FINAL DEL BUFFER (Estabilidad V22)
+        if (bufferSamples > 0) {
+            val outL = FloatArray(5)
+            val outR = FloatArray(5)
+            
+            // Detección de Mono (Si la diferencia es menor al 1% de la energía media)
+            val monoThreshold = (energySumL + energySumR) / (sampleCount * 100f)
+            isMonoFlow.value = (diffSum / sampleCount) < monoThreshold.coerceAtLeast(10f)
+
+            for (i in 0 until 5) {
+                val instL = bandSumsL[i] / bufferSamples
+                val instR = bandSumsR[i] / bufferSamples
+                
+                // Normalización inteligente (Decaimiento lento del pico para conservar dinámica)
+                bandPeaksL[i] = max(bandPeaksL[i] * 0.9998f, instL)
+                bandPeaksR[i] = max(bandPeaksR[i] * 0.9998f, instR)
+                
+                // Divisor con Headroom del 20% (1.2f) para evitar que MID/SUB se peguen arriba
+                val divL = bandPeaksL[i].coerceAtLeast(800f) * 1.2f
+                val divR = bandPeaksR[i].coerceAtLeast(800f) * 1.2f
+                
+                // Escala lineal pura para fidelidad profesional
+                outL[i] = (instL / divL).coerceIn(0f, 1f)
+                outR[i] = (instR / divR).coerceIn(0f, 1f)
+            }
+            bandEnergyLFlow.value = outL
+            bandEnergyRFlow.value = outR
+            diffSum = 0f
+        }
+        
+        // NORMALIZACIÓN ANTI-SATURACIÓN EXTREMA (V96)
+        visualPeakL = max(visualPeakL * 0.9992f, maxL)
+        visualPeakR = max(visualPeakR * 0.9992f, maxR)
+        
+        val rms = averageEnergy // Usamos el promedio histórico para mayor estabilidad
+        
+        // COMPRESIÓN DINÁMICA ULTRA-AGRESIVA PARA RADIOS "HOT"
+        val autoHeadroom = when {
+            rms > 12000f -> 2.5f 
+            rms > 8000f -> 2.1f  
+            rms > 4000f -> 1.7f  
+            else -> 1.4f         
+        }
+        
+        val minDivisor = 10000f 
+        
+        // El indicador de energía total ahora también es más reactivo
+        energyPeakLFlow.value = (maxL / (visualPeakL * autoHeadroom).coerceAtLeast(minDivisor)).coerceIn(0f, 1.0f)
+        energyPeakRFlow.value = (maxR / (visualPeakR * autoHeadroom).coerceAtLeast(minDivisor)).coerceIn(0f, 1.0f)
+
         val waveform = FloatArray(128)
         val shortsView = buffer.asShortBuffer()
         val step = (shortsView.remaining() / (128 * channels)).coerceAtLeast(1)
@@ -326,8 +427,6 @@ class StutterAudioProcessor : BaseAudioProcessor() {
             }
         }
         waveformFlow.value = waveform
-        
-        magnetActiveFlow.value = peakDetected && isCalibratedFlow.value
     }
 
     override fun onReset() {
