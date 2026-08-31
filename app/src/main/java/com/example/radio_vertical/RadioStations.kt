@@ -207,6 +207,39 @@ object RadioData {
             shortcode = "labgate_pop_rock"
         ),
         RadioStation(
+            name = "ADN RADIO",
+            url = "https://18493.live.streamtheworld.com/ADNRADIOAAC.aac",
+            backgroundColor = Color.Black,
+            logoUrl = "https://static.mytuner.mobi/media/tvos_radios/p1vck539h21v.png",
+            apiUrl = "https://radio-api.prisamedia.cl/v1/stations/adn/nowplaying"
+        ),
+        RadioStation(
+            name = "RADIO CORAZÓN",
+            url = "https://unlimited1-cl.dps.live/corazon/aac/icecast.audio",
+            backgroundColor = Color.Black,
+            logoUrl = "https://static.mytuner.mobi/media/tvos_radios/p10vrcv3m78e9.png",
+            apiUrl = "https://radio-api.prisamedia.cl/v1/stations/corazon/nowplaying"
+        ),
+        RadioStation(
+            name = "ROCK & POP",
+            url = "https://unlimited1-cl.dps.live/rockandpop/aac/icecast.audio",
+            backgroundColor = Color.Black,
+            logoUrl = "https://static.mytuner.mobi/media/tvos_radios/p1m9f2v52f19i9.png",
+            apiUrl = "https://radio-api.prisamedia.cl/v1/stations/rockandpop/nowplaying"
+        ),
+        RadioStation(
+            name = "RADIO LA CUECA",
+            url = "http://192.99.18.164:9718/;",
+            backgroundColor = Color.Black,
+            logoUrl = "https://radio-lacueca.cl/wp-content/uploads/2019/05/logo_radio_la_cueca.png"
+        ),
+        RadioStation(
+            name = "BÍO BÍO SANTIAGO",
+            url = "https://unlimited1-cl.dps.live/biobiosantiago/aac/icecast.audio",
+            backgroundColor = Color.Black,
+            logoUrl = "https://static.mytuner.mobi/media/tvos_radios/p16vf3v17r1m9.png"
+        ),
+        RadioStation(
             name = "LA ROCKA 80",
             url = "https://audiopanel.com.ar:8000/radio.aac",
             backgroundColor = Color.Black,

@@ -228,6 +228,9 @@ class RadioViewModel : ViewModel() {
             } else if (currentUrl.contains("playfm.cl") || stationName.contains("PLAY", ignoreCase = true)) {
                 requestBuilder.header("Referer", "https://playfm.cl/")
                 requestBuilder.header("Origin", "https://playfm.cl")
+            } else if (currentUrl.contains("prisamedia") || currentUrl.contains("adnradio") || currentUrl.contains("corazon.cl") || currentUrl.contains("rockandpop.cl")) {
+                requestBuilder.header("Referer", "https://www.adnradio.cl/")
+                requestBuilder.header("Origin", "https://www.adnradio.cl")
             }
 
             val request = requestBuilder.build()
