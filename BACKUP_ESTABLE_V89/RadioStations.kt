@@ -124,12 +124,6 @@ object RadioData {
             apiUrl = "https://api.90s90s.de/nowplaying/rock"
         ),
         RadioStation(
-            name = "CHRONIX AGGRESSION",
-            url = "http://usa19.fastcast4u.com:5720/",
-            backgroundColor = Color.Black,
-            logoUrl = "https://cdn-profiles.tunein.com/s14421/images/logoq.png"
-        ),
-        RadioStation(
             name = "CHRONIX GRIT",
             url = "https://usa19.fastcast4u.com:5950/;?type=http&nocache=1720495255",
             backgroundColor = Color.Black,
