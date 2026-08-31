@@ -167,11 +167,44 @@ object RadioData {
             logoUrl = "https://underground.fm/wp-content/uploads/2021/01/undgrnd-logo-clear2.png"
         ),
         RadioStation(
-            name = "LABGATE ALT",
-            url = "https://s2.ssl-stream.com/listen/labgate_alt_rock_grunge/stream",
+            name = "LABGATE CLASSIC ROCK",
+            url = "https://s2.ssl-stream.com/listen/labgate_classic_rock/radio.mp3",
             backgroundColor = Color.Black,
             logoUrl = "https://labgate.net/img/labgate_logo_300.png",
-            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_alt_rock_grunge"
+            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_classic_rock",
+            shortcode = "labgate_classic_rock"
+        ),
+        RadioStation(
+            name = "LABGATE ALT ROCK",
+            url = "https://s2.ssl-stream.com/listen/labgate_alt_rock_grunge/radio.mp3",
+            backgroundColor = Color.Black,
+            logoUrl = "https://labgate.net/img/labgate_logo_300.png",
+            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_alt_rock_grunge",
+            shortcode = "labgate_alt_rock_grunge"
+        ),
+        RadioStation(
+            name = "LABGATE PROG",
+            url = "https://s2.ssl-stream.com/listen/labgate_prog/radio.mp3",
+            backgroundColor = Color.Black,
+            logoUrl = "https://labgate.net/img/labgate_logo_300.png",
+            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_prog",
+            shortcode = "labgate_prog"
+        ),
+        RadioStation(
+            name = "LABGATE P.Y.G.",
+            url = "https://s2.ssl-stream.com/listen/labgate_p.y.g./radio.mp3",
+            backgroundColor = Color.Black,
+            logoUrl = "https://labgate.net/img/labgate_logo_300.png",
+            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_p.y.g.",
+            shortcode = "labgate_p.y.g."
+        ),
+        RadioStation(
+            name = "LABGATE HITWAVE",
+            url = "https://s2.ssl-stream.com/listen/labgate_pop_rock/radio.mp3",
+            backgroundColor = Color.Black,
+            logoUrl = "https://labgate.net/img/labgate_logo_300.png",
+            apiUrl = "https://s2.ssl-stream.com/api/nowplaying/labgate_pop_rock",
+            shortcode = "labgate_pop_rock"
         ),
         RadioStation(
             name = "LA ROCKA 80",
