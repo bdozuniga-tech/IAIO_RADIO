@@ -212,28 +212,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     }
     var favoriteMessage by remember { mutableStateOf<String?>(null) }
 
-    fun toggleFavorite(stationName: String) {
-        val current = favorites.value.toMutableSet()
-        if (current.contains(stationName)) {
-            current.remove(stationName)
-            vibratePhone(context, 30)
-        } else {
-            if (current.size >= 5) {
-                favoriteMessage = "Superaste el límite de 5 radios favoritas."
-                scope.launch {
-                    delay(3000)
-                    favoriteMessage = null
-                }
-                vibratePhone(context, 80)
-                return
-            }
-            current.add(stationName)
-            vibratePhone(context, 30)
-        }
-        favorites.value = current
-        prefs.edit().putStringSet("favorites", current).commit() // Uso de commit para asegurar persistencia inmediata
-    }
-
     // ESTADOS PARA ACTUALIZACIÓN AUTOMÁTICA (OTA)
     val updateManager = remember { UpdateManager(context) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -256,22 +234,8 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
     }
 
-    // SINCRONIZACIÓN DE NAVEGACIÓN BLUETOOTH (AVRCP NEXT/PREVIOUS)
-    LaunchedEffect(player) {
-        PlaybackService.currentStationIndexFlow.collect { index ->
-            if (index == -1) return@collect // Ignorar estado inicial no establecido
-            
-            val total = radioStations.size
-            if (total > 0) {
-                val currentPage = pagerState.currentPage
-                val currentActualIndex = ((currentPage % total) + total) % total
-                if (currentActualIndex != index) {
-                    val diff = index - currentActualIndex
-                    pagerState.animateScrollToPage(currentPage + diff)
-                }
-            }
-        }
-    }
+    // SINCRONIZACIÓN DE NAVEGACIÓN (FUENTE DE VERDAD: PlaybackService)
+    val currentStationName by PlaybackService.currentStationNameFlow.collectAsState()
 
     // SINCRONIZACIÓN DE AUDIO Y VISUALES
     val currentBpm by PlaybackService.currentBpm.collectAsState()
@@ -345,12 +309,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         prefs.edit().putBoolean("last_playing_state", isPlayingState).apply()
     }
 
-    LaunchedEffect(pagerState.currentPage) {
-        val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
-        prefs.edit().putInt("last_station_index", actualIndex).apply()
-        vibratePhone(context, 20) 
-    }
-
     LaunchedEffect(isAluminumMode) { prefs.edit().putBoolean("is_aluminum", isAluminumMode).apply() }
     LaunchedEffect(isOscillatorMode) { prefs.edit().putBoolean("is_oscillator", isOscillatorMode).apply() }
 
@@ -415,30 +373,32 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
     }
 
-    LaunchedEffect(pagerState.currentPage, player) {
-        val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
-        val station = radioStations[actualIndex]
+    // EFECTO MAESTRO DE AUDIO: Reacciona al cambio de radio global (BT, Notif, Swipe, Modo)
+    LaunchedEffect(currentStationName, player) {
+        if (currentStationName.isEmpty()) return@LaunchedEffect
+        val station = radioStations.find { it.name == currentStationName } ?: return@LaunchedEffect
         
-        // RESET Y POLLING INMEDIATO (Sin delay para evitar herencia de metadata)
-        PlaybackService.updateInternalIndex(actualIndex)
+        // Sincronizar el índice interno global y el polling de metadatos
+        val globalIndex = radioStations.indexOfFirst { it.name == station.name }
+        if (globalIndex != -1) {
+            PlaybackService.updateInternalIndex(globalIndex)
+        }
         radioViewModel.startPolling(station.apiUrl, station.shortcode, station.name)
         
         val currentPlayer = player ?: return@LaunchedEffect
         val currentMediaId = currentPlayer.currentMediaItem?.mediaId
         
-        // Si ya estamos reproduciendo esta radio (por ID estable), NO hacer nada en el audio
+        // Si ya estamos reproduciendo esta radio, solo aseguramos que el audio siga fluyendo
         if (currentMediaId == station.name && 
             (currentPlayer.playbackState == Player.STATE_READY || 
              currentPlayer.playbackState == Player.STATE_BUFFERING)) {
-            Log.d("RadioApp", "Misma radio detectada (${station.name}), manteniendo audio.")
-            
             if (!currentPlayer.isPlaying && isPlayingState) {
                 currentPlayer.play()
             }
             return@LaunchedEffect
         }
 
-        Log.d("RadioApp", "Cambiando audio a: ${station.name}")
+        Log.d("RadioApp", "[AUDIO] Cargando: ${station.name}")
         currentPlayer.stop()
         currentPlayer.clearMediaItems()
         PlaybackService.stutterProcessor.resetVisualPeaks()
@@ -497,14 +457,140 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         pageCount = { if (favoriteStations.isEmpty()) 1 else Int.MAX_VALUE }
     )
 
-    LaunchedEffect(mainHorizontalPagerState.currentPage) {
+    fun toggleFavorite(stationName: String) {
+        val current = favorites.value.toMutableSet()
+        val isRemovingActive = current.contains(stationName) && 
+                               currentStationName == stationName && 
+                               PlaybackService.navigationMode.value == NavigationMode.FAVORITES
+
+        if (current.contains(stationName)) {
+            // LÓGICA DE ELIMINACIÓN INTELIGENTE EN MODO FAVORITAS
+            if (isRemovingActive && favoriteStations.size > 1) {
+                val currentIndexInFavs = favoriteStations.indexOfFirst { it.name == stationName }
+                if (currentIndexInFavs != -1) {
+                    // Decidir la siguiente radio (la siguiente en la lista, o la anterior si es la última)
+                    val nextIndex = if (currentIndexInFavs < favoriteStations.size - 1) currentIndexInFavs + 1 else currentIndexInFavs - 1
+                    val nextStation = favoriteStations[nextIndex]
+                    
+                    // Disparamos la navegación visual y de audio ANTES de que la lista cambie
+                    scope.launch {
+                        val direction = if (currentIndexInFavs < favoriteStations.size - 1) 1 else -1
+                        favoritesPagerState.animateScrollToPage(favoritesPagerState.currentPage + direction)
+                        PlaybackService.updateCurrentStation(nextStation.name)
+                    }
+                }
+            }
+            
+            current.remove(stationName)
+            vibratePhone(context, 30)
+        } else {
+            if (current.size >= 5) {
+                favoriteMessage = "Superaste el límite de 5 radios favoritas."
+                scope.launch {
+                    delay(3000)
+                    favoriteMessage = null
+                }
+                vibratePhone(context, 80)
+                return
+            }
+            current.add(stationName)
+            vibratePhone(context, 30)
+        }
+        favorites.value = current
+        prefs.edit().putStringSet("favorites", current).commit() 
+    }
+
+    // Sincronizar FAVORITOS con el SERVICIO
+    LaunchedEffect(favorites.value) {
+        PlaybackService.updateFavoriteNames(favorites.value.toList())
+    }
+
+    // 1. Escuchar EVENTOS de navegación (Bluetooth / Notificación) para animar el Pager verticalmente
+    LaunchedEffect(Unit) {
+        PlaybackService.navEvent.collect { direction ->
+            val isFavoritesMode = mainHorizontalPagerState.currentPage == 1
+            if (isFavoritesMode) {
+                if (favoriteStations.isNotEmpty()) {
+                    favoritesPagerState.animateScrollToPage(favoritesPagerState.currentPage + direction)
+                }
+            } else {
+                pagerState.animateScrollToPage(pagerState.currentPage + direction)
+            }
+        }
+    }
+
+    // 2. Sincronizar MODO con el SERVICIO y manejar el salto a FAVORITA 1
+    LaunchedEffect(mainHorizontalPagerState.currentPage, favoriteStations) {
+        val mode = if (mainHorizontalPagerState.currentPage == 1) NavigationMode.FAVORITES else NavigationMode.ALL
+        PlaybackService.updateNavigationMode(mode)
+        
+        // REGLA FUNDAMENTAL: Al entrar a FAVORITAS, siempre comenzar desde FAVORITA 1
+        if (mode == NavigationMode.FAVORITES && favoriteStations.isNotEmpty()) {
+            val firstFavName = favoriteStations[0].name
+            if (currentStationName != firstFavName) {
+                PlaybackService.updateCurrentStation(firstFavName)
+            }
+            // Sincronización instantánea del pager de favoritas al inicio (sin animación)
+            val favIndex = 0
+            val currentActualFavIndex = ((favoritesPagerState.currentPage % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
+            if (currentActualFavIndex != favIndex) {
+                val diff = favIndex - currentActualFavIndex
+                favoritesPagerState.scrollToPage(favoritesPagerState.currentPage + diff)
+            }
+        }
+        
         prefs.edit().putInt("last_mode", mainHorizontalPagerState.currentPage).apply()
         vibratePhone(context, 25)
     }
 
-    LaunchedEffect(favoritesPagerState.currentPage) {
-        if (mainHorizontalPagerState.currentPage == 1) {
-            vibratePhone(context, 20)
+    // 3. Sincronización de Respaldo: Asegurar que los Pagers reflejen la radio actual (Sin animación para evitar loops)
+    LaunchedEffect(currentStationName) {
+        if (currentStationName.isEmpty()) return@LaunchedEffect
+        
+        // Sincronizar Pager Principal (Todas)
+        val allIndex = radioStations.indexOfFirst { it.name == currentStationName }
+        if (allIndex != -1) {
+            val currentActualAllIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
+            if (currentActualAllIndex != allIndex) {
+                val diff = allIndex - currentActualAllIndex
+                pagerState.scrollToPage(pagerState.currentPage + diff)
+            }
+        }
+
+        // Sincronizar Pager de Favoritas
+        if (favoriteStations.isNotEmpty()) {
+            val favIndex = favoriteStations.indexOfFirst { it.name == currentStationName }
+            if (favIndex != -1) {
+                val currentActualFavIndex = ((favoritesPagerState.currentPage % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
+                if (currentActualFavIndex != favIndex) {
+                    val diff = favIndex - currentActualFavIndex
+                    favoritesPagerState.scrollToPage(favoritesPagerState.currentPage + diff)
+                }
+            }
+        }
+    }
+
+    // 4. Sincronizar SERVICIO con PAGERS (Swipe Manual o Cambio de Lista)
+    LaunchedEffect(pagerState.currentPage, radioStations) {
+        if (mainHorizontalPagerState.currentPage == 0) { // Solo si estamos en el modo "Todas"
+            val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
+            val station = radioStations[actualIndex]
+            if (currentStationName != station.name) {
+                PlaybackService.updateCurrentStation(station.name)
+                prefs.edit().putInt("last_station_index", actualIndex).apply()
+                vibratePhone(context, 20)
+            }
+        }
+    }
+
+    LaunchedEffect(favoritesPagerState.currentPage, favoriteStations) {
+        if (mainHorizontalPagerState.currentPage == 1 && favoriteStations.isNotEmpty()) { // Solo si estamos en el modo "Favoritas"
+            val actualFavIndex = ((favoritesPagerState.currentPage % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
+            val station = favoriteStations[actualFavIndex]
+            if (currentStationName != station.name) {
+                PlaybackService.updateCurrentStation(station.name)
+                vibratePhone(context, 20)
+            }
         }
     }
 
@@ -653,24 +739,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
 
         // Lógica de cambio de radio al navegar verticalmente en FAVORITAS
-        LaunchedEffect(favoritesPagerState.currentPage, mainHorizontalPagerState.currentPage, favoriteStations) {
-            if (mainHorizontalPagerState.currentPage == 1 && favoriteStations.isNotEmpty()) {
-                val actualFavIndex = ((favoritesPagerState.currentPage % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
-                val station = favoriteStations[actualFavIndex]
-                
-                // Buscamos esta radio en la lista global para sincronizar el motor de audio
-                val globalIndex = radioStations.indexOfFirst { it.name == station.name }
-                if (globalIndex != -1) {
-                    val currentGlobal = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
-                    if (currentGlobal != globalIndex) {
-                        val diff = globalIndex - currentGlobal
-                        // Usamos scrollToPage para una sincronización instantánea del índice interno
-                        pagerState.scrollToPage(pagerState.currentPage + diff)
-                        PlaybackService.updateInternalIndex(globalIndex)
-                    }
-                }
-            }
-        }
+        // ESTE BLOQUE SE HA UNIFICADO EN LOS LaunchedEffect SUPERIORES PARA EVITAR BUCLES
 
         // LEFT LOCK BUTTON
         Box(modifier = Modifier.padding(bottom = 48.dp, start = 24.dp).align(Alignment.BottomStart).size(64.dp).scale(if (isLockPressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {

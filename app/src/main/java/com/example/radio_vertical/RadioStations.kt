@@ -269,6 +269,12 @@ object RadioData {
     )
 
     fun getMediaItems(): List<MediaItem> = stations.map { it.toMediaItem() }
+
+    fun getStationByName(name: String): RadioStation? = stations.find { it.name == name }
+
+    fun getFavoritesList(names: List<String>): List<RadioStation> {
+        return stations.filter { names.contains(it.name) }
+    }
     
     fun getRootItem(): MediaItem {
         return MediaItem.Builder()

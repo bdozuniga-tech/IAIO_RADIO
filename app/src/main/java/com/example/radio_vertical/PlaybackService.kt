@@ -38,7 +38,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+enum class NavigationMode { ALL, FAVORITES }
 
 @UnstableApi
 class PlaybackService : MediaLibraryService() {
@@ -72,17 +75,31 @@ class PlaybackService : MediaLibraryService() {
         if (currentTime - lastNavTime > 600) { 
             lastNavTime = currentTime
             
-            // CAMBIO DE ESTACIÓN DIRECTO EN EL SERVICIO
-            val total = RadioData.stations.size
-            val newIndex = (((internalIndex + direction) % total) + total) % total
-            internalIndex = newIndex
-            val station = RadioData.stations[newIndex]
+            val mode = navigationMode.value
+            val allStations = RadioData.stations
+            val favoritesNames = favoriteStationNames.value
             
-            Log.d("PlaybackService", "Cambiando a estación desde segundo plano: ${station.name}")
+            val currentList = if (mode == NavigationMode.FAVORITES && favoritesNames.isNotEmpty()) {
+                RadioData.getFavoritesList(favoritesNames)
+            } else {
+                allStations
+            }
+
+            if (currentList.isEmpty()) return
+
+            val currentStationName = currentStationNameFlow.value
+            val currentIndex = currentList.indexOfFirst { it.name == currentStationName }.let { if (it == -1) 0 else it }
+            
+            val total = currentList.size
+            val newIndex = (((currentIndex + direction) % total) + total) % total
+            val station = currentList[newIndex]
+            
+            Log.d("PlaybackService", "[NAV] Mode=$mode Direction=${if(direction > 0) "NEXT" else "PREVIOUS"} Current=$currentStationName Next=${station.name}")
             
             player?.let { p ->
                 val mimeType = if (station.url.contains("m3u8")) MimeTypes.APPLICATION_M3U8 else null
                 val mediaItem = MediaItem.Builder()
+                    .setMediaId(station.name)
                     .setUri(station.url)
                     .setMimeType(mimeType)
                     .setMediaMetadata(
@@ -99,7 +116,9 @@ class PlaybackService : MediaLibraryService() {
 
             serviceScope.launch { 
                 _navEvent.emit(direction)
-                _currentStationIndexFlow.value = newIndex
+                val globalIndex = allStations.indexOfFirst { it.name == station.name }
+                _currentStationIndexFlow.value = globalIndex
+                _currentStationNameFlow.value = station.name
             }
         }
     }
@@ -197,10 +216,39 @@ class PlaybackService : MediaLibraryService() {
         private val _currentStationIndexFlow = MutableStateFlow(-1)
         val currentStationIndexFlow: StateFlow<Int> = _currentStationIndexFlow
 
-        private var internalIndex = 0
+        private val _currentStationNameFlow = MutableStateFlow("")
+        val currentStationNameFlow: StateFlow<String> = _currentStationNameFlow
+
+        private val _navigationMode = MutableStateFlow(NavigationMode.ALL)
+        val navigationMode = _navigationMode.asStateFlow()
+
+        private val _favoriteStationNames = MutableStateFlow<List<String>>(emptyList())
+        val favoriteStationNames = _favoriteStationNames.asStateFlow()
+
         fun updateInternalIndex(index: Int) {
-            internalIndex = index
             _currentStationIndexFlow.value = index
+            if (index in RadioData.stations.indices) {
+                _currentStationNameFlow.value = RadioData.stations[index].name
+            }
+        }
+
+        fun updateNavigationMode(mode: NavigationMode) {
+            if (_navigationMode.value != mode) {
+                Log.d("PlaybackService", "[NAV-MODE] ${_navigationMode.value} -> $mode")
+                _navigationMode.value = mode
+            }
+        }
+
+        fun updateFavoriteNames(names: List<String>) {
+            _favoriteStationNames.value = names
+        }
+
+        fun updateCurrentStation(name: String) {
+            if (_currentStationNameFlow.value != name) {
+                _currentStationNameFlow.value = name
+                val globalIndex = RadioData.stations.indexOfFirst { it.name == name }
+                _currentStationIndexFlow.value = globalIndex
+            }
         }
 
         val stutterProcessor = StutterAudioProcessor()
@@ -223,8 +271,8 @@ class PlaybackService : MediaLibraryService() {
         
         // CARGAR ÚLTIMO ÍNDICE GUARDADO PARA EVITAR RESET A RADIO 1
         val prefs = getSharedPreferences("ia_radio_prefs", Context.MODE_PRIVATE)
-        internalIndex = prefs.getInt("last_station_index", 0)
-        _currentStationIndexFlow.value = internalIndex
+        val lastIndex = prefs.getInt("last_station_index", 0)
+        updateInternalIndex(lastIndex)
         
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
