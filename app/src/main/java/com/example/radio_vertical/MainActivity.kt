@@ -776,7 +776,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v9.4.1 (vCode 101) • MEJORAS: Lógica ❤️ Perfeccionada • Beethoven Metadata Sync • Sync BPM Global • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v9.4.2 (vCode 102) • MEJORAS: Ajuste Vertical Vinilo • Lógica ❤️ Perfeccionada • Beethoven Sync • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
@@ -1011,7 +1011,7 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
             val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
             val finalScale = beatPulse * energyFactor
 
-            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = (-30).dp).pointerInput(player) {
+            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = (-80).dp).pointerInput(player) {
                 detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
                     isTouching = true
                     val centerX = size.width / 2f
