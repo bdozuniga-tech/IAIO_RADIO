@@ -186,6 +186,32 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     var isShowInfo by remember { mutableStateOf(false) } 
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
+    // GESTIÓN DE FAVORITOS (PERSISTENCIA LOCAL)
+    val favorites = remember { mutableStateOf(prefs.getStringSet("favorites", emptySet()) ?: emptySet()) }
+    var favoriteMessage by remember { mutableStateOf<String?>(null) }
+
+    fun toggleFavorite(stationName: String) {
+        val current = favorites.value.toMutableSet()
+        if (current.contains(stationName)) {
+            current.remove(stationName)
+            vibratePhone(context, 30)
+        } else {
+            if (current.size >= 5) {
+                favoriteMessage = "Superaste el límite de 5 radios favoritas."
+                scope.launch {
+                    delay(3000)
+                    favoriteMessage = null
+                }
+                vibratePhone(context, 80)
+                return
+            }
+            current.add(stationName)
+            vibratePhone(context, 30)
+        }
+        favorites.value = current
+        prefs.edit().putStringSet("favorites", current).apply()
+    }
+
     // ESTADOS PARA ACTUALIZACIÓN AUTOMÁTICA (OTA)
     val updateManager = remember { UpdateManager(context) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -474,7 +500,9 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
                 visMode = visMode,
                 onModeChange = { visMode = it },
-                audioQuality = audioQuality
+                audioQuality = audioQuality,
+                isFavorite = favorites.value.contains(station.name),
+                onToggleFavorite = { toggleFavorite(station.name) }
             )
         }
 
@@ -561,7 +589,7 @@ fun DefaultVinyl(referentialUrl: String?, isAluminum: Boolean) {
 
 @OptIn(UnstableApi::class)
 @Composable
-fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realBandsL: FloatArray, realBandsR: FloatArray, realWaveform: FloatArray, isMagnetActive: Boolean, isMono: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String) {
+fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realBandsL: FloatArray, realBandsR: FloatArray, realWaveform: FloatArray, isMagnetActive: Boolean, isMono: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String, isFavorite: Boolean, onToggleFavorite: () -> Unit) {
     val context = LocalContext.current
     var currentRotation by remember { mutableStateOf(0f) }
     var isTouching by remember { mutableStateOf(false) }
