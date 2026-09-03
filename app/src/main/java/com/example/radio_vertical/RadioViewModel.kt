@@ -170,6 +170,17 @@ data class IcecastSource(
     val listenurl: String? = null
 )
 
+@Serializable
+data class InfinyResponse(
+    val name: String? = null,
+    val artist: InfinyArtist? = null
+)
+
+@Serializable
+data class InfinyArtist(
+    val name: String? = null
+)
+
 data class RadioMetadata(
     val title: String = "En vivo",
     val artist: String = "",
@@ -358,6 +369,19 @@ class RadioViewModel : ViewModel() {
                                         }
                                         val match = sources.find { it.listenurl?.contains("radio.aac") == true } ?: sources.firstOrNull()
                                         updateUI(match?.title, match?.artist, null, stationName)
+                                    }
+                                }
+                                url.contains("infiny.live") -> {
+                                    val parsed = json.decodeFromString<InfinyResponse>(body)
+                                    // En Beethoven (Infiny), el 'name' suele traer "Obra - Compositor"
+                                    // y 'artist.name' suele ser estático "Radio Beethoven".
+                                    // Intentamos separar por " - " si viene todo en 'name'.
+                                    val rawName = parsed.name
+                                    if (rawName != null && rawName.contains(" - ")) {
+                                        val parts = rawName.split(" - ")
+                                        updateUI(parts[0], parts.getOrNull(1), null, stationName)
+                                    } else {
+                                        updateUI(rawName, parsed.artist?.name, null, stationName)
                                     }
                                 }
                                 else -> {

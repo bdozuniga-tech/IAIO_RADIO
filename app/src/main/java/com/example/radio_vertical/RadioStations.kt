@@ -72,8 +72,8 @@ object RadioData {
             name = "BEETHOVEN FM",
             url = "https://hls-audio-cl-1-isp.dps.live/beethovenfm/gotardis/audio/now/livestream1.m3u8",
             backgroundColor = Color.Black,
-            logoUrl = "https://www.beethovenfm.cl/wp-content/uploads/2020/03/logo-beethoven.png",
-            apiUrl = "https://api.mdstrm.com/metadata/v1/live/5f9c5220c576570774301383"
+            logoUrl = "https://infiny.live/uploads/multimedia/2020/04/s_8ce69386916381d2d6e1da72280373bc0.png",
+            apiUrl = "https://infiny.live/uploads/radios/beethovenfm/json/now.json"
         ),
         RadioStation(
             name = "FUTURO",
