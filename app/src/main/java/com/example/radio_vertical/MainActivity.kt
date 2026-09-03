@@ -707,18 +707,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             }
         }
 
-        // INDICADOR SUPERIOR DE MODO (TODAS vs FAVORITAS)
-        val modePulseTiming = if (currentBpm > 0) 60000 / currentBpm else 800
-        val modePulseAnim = rememberInfiniteTransition(label = "modePulse")
-        val modePulseAlpha by modePulseAnim.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(modePulseTiming / 2), RepeatMode.Reverse),
-            label = "alpha"
-        )
-        // Color Cyan si el magneto está activo, igual que la firma * IAIO *
-        val modePulseColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = modePulseAlpha)
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -729,7 +717,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         ) {
             Text(
                 text = "TODAS LAS RADIOS",
-                color = if (mainHorizontalPagerState.currentPage == 0) modePulseColor else Color.White.copy(alpha = 0.3f),
+                color = if (mainHorizontalPagerState.currentPage == 0) Color.White else Color.White.copy(alpha = 0.3f),
                 fontSize = 10.sp,
                 fontWeight = if (mainHorizontalPagerState.currentPage == 0) FontWeight.Black else FontWeight.Normal,
                 modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(0) } } }
@@ -742,7 +730,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             )
             Text(
                 text = "FAVORITAS",
-                color = if (mainHorizontalPagerState.currentPage == 1) modePulseColor else Color.White.copy(alpha = 0.3f),
+                color = if (mainHorizontalPagerState.currentPage == 1) Color.White else Color.White.copy(alpha = 0.3f),
                 fontSize = 10.sp,
                 fontWeight = if (mainHorizontalPagerState.currentPage == 1) FontWeight.Black else FontWeight.Normal,
                 modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(1) } } }
@@ -788,7 +776,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v9.4 (vCode 100) • MEJORAS: Beethoven FM 🎼 • Latido BPM ❤️ • Límite 10 Favoritas • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v9.4.1 (vCode 101) • MEJORAS: Lógica ❤️ Perfeccionada • Beethoven Metadata Sync • Sync BPM Global • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
@@ -997,10 +985,13 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     .pointerInput(Unit) { detectTapGestures { onToggleFavorite(); vibratePhone(context, 50) } },
                 contentAlignment = Alignment.Center
             ) {
-                // Si es favorita, el color palpita al tempo (como el botón LIVE)
-                // Y si el Magneto está activo, se vuelve Cyan como la firma de IAIO
-                val baseHeartColor = if (isFavorite) Color(0xFFFF5252) else Color.Gray
-                val heartColor = if (isMagnetActive) Color.Cyan else baseHeartColor.copy(alpha = if (isFavorite) heartPulseAlpha else 0.3f)
+                // LÓGICA CORREGIDA: Solo palpita y reacciona al ritmo si ES FAVORITA
+                val heartColor = if (isFavorite) {
+                    if (isMagnetActive) Color.Cyan 
+                    else Color(0xFFFF5252).copy(alpha = heartPulseAlpha)
+                } else {
+                    Color.Gray.copy(alpha = 0.2f)
+                }
                 
                 Canvas(modifier = Modifier.size(24.dp)) {
                     val path = Path().apply {
