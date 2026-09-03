@@ -33,6 +33,7 @@ class UpdateManager(private val context: Context) {
     private val UPDATE_URL = "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/update.json"
 
     suspend fun checkForUpdates(currentVersionCode: Int): UpdateInfo? {
+        Log.d("UpdateManager", "IAIO: Buscando mambo nuevo... (Actual: $currentVersionCode)")
         return withContext(Dispatchers.IO) {
             try {
                 val nocacheUrl = "$UPDATE_URL?t=${System.currentTimeMillis()}"
@@ -41,7 +42,9 @@ class UpdateManager(private val context: Context) {
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: return@withContext null
                         val info = json.decodeFromString<UpdateInfo>(body)
+                        Log.d("UpdateManager", "IAIO: Encontrada versión ${info.versionCode} en el servidor")
                         if (info.versionCode > currentVersionCode) {
+                            Log.d("UpdateManager", "IAIO: ¡HAY MAMBO NUEVO!")
                             return@withContext info
                         }
                     }
