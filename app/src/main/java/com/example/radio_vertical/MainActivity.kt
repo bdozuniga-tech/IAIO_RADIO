@@ -231,7 +231,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             vibratePhone(context, 30)
         }
         favorites.value = current
-        prefs.edit().putStringSet("favorites", current).apply()
+        prefs.edit().putStringSet("favorites", current).commit() // Uso de commit para asegurar persistencia inmediata
     }
 
     // ESTADOS PARA ACTUALIZACIÓN AUTOMÁTICA (OTA)
@@ -573,41 +573,49 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                         )
                     }
                 } else {
-                    VerticalPager(state = favoritesPagerState, modifier = Modifier.fillMaxSize(), userScrollEnabled = !isLocked) { page ->
-                        val actualFavIndex = ((page % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
-                        val station = favoriteStations[actualFavIndex]
-                        val isMetadataValid = metadata.stationName == station.name
-                        RadioScreen(
-                            station = station, 
-                            title = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) metadata.title else "En vivo", 
-                            artist = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) metadata.artist else station.name, 
-                            artworkUrl = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
-                            isActive = favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1, 
-                            isPlaying = isPlayingState, 
-                            isCountdownActive = isCountdownActive, 
-                            onPauseRequest = { isCountdownActive = true }, 
-                            bpm = currentBpm, 
-                            realEnergyL = if (isPlayingState || isCountdownActive) syncedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                            realEnergyR = if (isPlayingState || isCountdownActive) syncedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                            realBandsL = syncedBandsL,
-                            realBandsR = syncedBandsR,
-                            realWaveform = syncedWaveform,
-                            isMagnetActive = syncedMagnetActive, 
-                            isMono = isMono,
-                            isCalibrated = isCalibrated, 
-                            calibrationCountdown = calibrationCountdown, 
-                            player = player, 
-                            onScratchStart = { isCountdownActive = false }, 
-                            onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
-                            isAluminum = isAluminumMode,
-                            onToggleAluminum = { isAluminumMode = !isAluminumMode },
-                            onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
-                            visMode = visMode,
-                            onModeChange = { visMode = it },
-                            audioQuality = audioQuality,
-                            isFavorite = favorites.value.contains(station.name),
-                            onToggleFavorite = { toggleFavorite(station.name) }
-                        )
+                    VerticalPager(
+                        state = favoritesPagerState, 
+                        modifier = Modifier.fillMaxSize(), 
+                        userScrollEnabled = !isLocked,
+                        key = { it }
+                    ) { page ->
+                        val actualFavIndex = if (favoriteStations.isNotEmpty()) ((page % favoriteStations.size) + favoriteStations.size) % favoriteStations.size else 0
+                        val station = if (favoriteStations.isNotEmpty()) favoriteStations[actualFavIndex] else null
+                        
+                        if (station != null) {
+                            val isMetadataValid = metadata.stationName == station.name
+                            RadioScreen(
+                                station = station, 
+                                title = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) metadata.title else "En vivo", 
+                                artist = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) metadata.artist else station.name, 
+                                artworkUrl = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
+                                isActive = favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1, 
+                                isPlaying = isPlayingState, 
+                                isCountdownActive = isCountdownActive, 
+                                onPauseRequest = { isCountdownActive = true }, 
+                                bpm = currentBpm, 
+                                realEnergyL = if (isPlayingState || isCountdownActive) syncedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                                realEnergyR = if (isPlayingState || isCountdownActive) syncedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                                realBandsL = syncedBandsL,
+                                realBandsR = syncedBandsR,
+                                realWaveform = syncedWaveform,
+                                isMagnetActive = syncedMagnetActive, 
+                                isMono = isMono,
+                                isCalibrated = isCalibrated, 
+                                calibrationCountdown = calibrationCountdown, 
+                                player = player, 
+                                onScratchStart = { isCountdownActive = false }, 
+                                onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
+                                isAluminum = isAluminumMode,
+                                onToggleAluminum = { isAluminumMode = !isAluminumMode },
+                                onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
+                                visMode = visMode,
+                                onModeChange = { visMode = it },
+                                audioQuality = audioQuality,
+                                isFavorite = favorites.value.contains(station.name),
+                                onToggleFavorite = { toggleFavorite(station.name) }
+                            )
+                        }
                     }
                 }
             }
@@ -649,13 +657,16 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             if (mainHorizontalPagerState.currentPage == 1 && favoriteStations.isNotEmpty()) {
                 val actualFavIndex = ((favoritesPagerState.currentPage % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
                 val station = favoriteStations[actualFavIndex]
+                
+                // Buscamos esta radio en la lista global para sincronizar el motor de audio
                 val globalIndex = radioStations.indexOfFirst { it.name == station.name }
                 if (globalIndex != -1) {
-                    // Sincronizamos el pager principal (background) para que al volver a "Todas" estemos en la misma
                     val currentGlobal = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
                     if (currentGlobal != globalIndex) {
                         val diff = globalIndex - currentGlobal
+                        // Usamos scrollToPage para una sincronización instantánea del índice interno
                         pagerState.scrollToPage(pagerState.currentPage + diff)
+                        PlaybackService.updateInternalIndex(globalIndex)
                     }
                 }
             }
@@ -697,7 +708,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v9.3 (vCode 94) • MEJORAS: Sistema Favoritos v1.0 • Navegación Bi-Dimensional • Sincro Maestro v2 • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v9.3 (vCode 95) • MEJORAS: Sistema Favoritos v1.1 • Navegación Circular • Sincro Maestro Final • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
