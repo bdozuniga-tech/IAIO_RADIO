@@ -145,7 +145,7 @@ fun SpectrumVisualizer(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(160.dp)
+            .height(130.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.4f))
             .border(0.5.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))

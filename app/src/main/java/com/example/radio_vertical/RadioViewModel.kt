@@ -173,7 +173,8 @@ data class IcecastSource(
 data class RadioMetadata(
     val title: String = "En vivo",
     val artist: String = "",
-    val artworkUrl: String? = null
+    val artworkUrl: String? = null,
+    val stationName: String = ""
 )
 
 class RadioViewModel : ViewModel() {
@@ -199,7 +200,8 @@ class RadioViewModel : ViewModel() {
         _metadata.value = RadioMetadata(
             title = "En vivo",
             artist = stationName,
-            artworkUrl = null
+            artworkUrl = null,
+            stationName = stationName
         )
         
         if (apiUrl != null) {
@@ -399,13 +401,15 @@ class RadioViewModel : ViewModel() {
                 _metadata.value = RadioMetadata(
                     title = title?.ifEmpty { "En vivo" } ?: "En vivo",
                     artist = if (!artist.isNullOrEmpty()) artist else stationName,
-                    artworkUrl = if (!art.isNullOrBlank()) art else null
+                    artworkUrl = if (!art.isNullOrBlank()) art else null,
+                    stationName = stationName
                 )
             } else {
                 _metadata.value = RadioMetadata(
                     title = "En vivo",
                     artist = stationName,
-                    artworkUrl = null
+                    artworkUrl = null,
+                    stationName = stationName
                 )
             }
         }

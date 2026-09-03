@@ -1,10 +1,14 @@
 package com.example.radio_vertical
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ComponentName
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -25,6 +29,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -187,7 +192,24 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     // GESTIÓN DE FAVORITOS (PERSISTENCIA LOCAL)
-    val favorites = remember { mutableStateOf(prefs.getStringSet("favorites", emptySet()) ?: emptySet()) }
+    // Forzamos un reset del estado de primera ejecución para la prueba
+    // En producción, esto se lee de SharedPreferences normalmente
+    val isFirstRunFav = remember { mutableStateOf(prefs.getBoolean("is_first_run_fav", true)) }
+    
+    val favorites = remember { 
+        val favs = prefs.getStringSet("favorites", emptySet()) ?: emptySet()
+        if (isFirstRunFav.value && favs.isEmpty()) {
+            val defaultFav = setOf(radioStations[0].name)
+            prefs.edit().putStringSet("favorites", defaultFav).putBoolean("is_first_run_fav", false).apply()
+            isFirstRunFav.value = false
+            mutableStateOf(defaultFav)
+        } else {
+            mutableStateOf(favs)
+        }
+    }
+    val favoriteStations = remember(favorites.value) {
+        radioStations.filter { favorites.value.contains(it.name) }
+    }
     var favoriteMessage by remember { mutableStateOf<String?>(null) }
 
     fun toggleFavorite(stationName: String) {
@@ -326,7 +348,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     LaunchedEffect(pagerState.currentPage) {
         val actualIndex = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
         prefs.edit().putInt("last_station_index", actualIndex).apply()
-        vibratePhone(context, 30) 
+        vibratePhone(context, 20) 
     }
 
     LaunchedEffect(isAluminumMode) { prefs.edit().putBoolean("is_aluminum", isAluminumMode).apply() }
@@ -461,6 +483,31 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         audioQuality = "AUDIO: $bitrate $format STEREO • HI-FI ENGINE V78 • BUFFER: 15s • SAMPLING: 44.1kHz • "
     }
 
+    // ESTADOS DE NAVEGACIÓN HORIZONTAL
+    val savedMode = remember { prefs.getInt("last_mode", 0) }
+    val mainHorizontalPagerState = rememberPagerState(initialPage = savedMode, pageCount = { 2 })
+    
+    // Pager de Favoritas Circular
+    val favInitialPage = remember(favoriteStations.size) {
+        if (favoriteStations.isEmpty()) 0 
+        else (Int.MAX_VALUE / 2 / favoriteStations.size.coerceAtLeast(1)) * favoriteStations.size.coerceAtLeast(1)
+    }
+    val favoritesPagerState = rememberPagerState(
+        initialPage = favInitialPage, 
+        pageCount = { if (favoriteStations.isEmpty()) 1 else Int.MAX_VALUE }
+    )
+
+    LaunchedEffect(mainHorizontalPagerState.currentPage) {
+        prefs.edit().putInt("last_mode", mainHorizontalPagerState.currentPage).apply()
+        vibratePhone(context, 25)
+    }
+
+    LaunchedEffect(favoritesPagerState.currentPage) {
+        if (mainHorizontalPagerState.currentPage == 1) {
+            vibratePhone(context, 20)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) {
         awaitPointerEventScope {
             while (true) {
@@ -469,41 +516,149 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             }
         }
     }) {
-        VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize(), key = { it }, userScrollEnabled = !isLocked) { page ->
-            val actualIndex = ((page % radioStations.size) + radioStations.size) % radioStations.size
-            val station = radioStations[actualIndex]
-            RadioScreen(
-                station = station, 
-                // Lógica de limpieza inmediata: solo mostramos metadata si el pager está exactamente en esta página
-                title = if (pagerState.currentPage == page) metadata.title else "En vivo", 
-                artist = if (pagerState.currentPage == page) metadata.artist else station.name, 
-                artworkUrl = if (pagerState.currentPage == page) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
-                isActive = pagerState.currentPage == page, 
-                isPlaying = isPlayingState, 
-                isCountdownActive = isCountdownActive, 
-                onPauseRequest = { isCountdownActive = true }, 
-                bpm = currentBpm, 
-                realEnergyL = if (isPlayingState || isCountdownActive) syncedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                realEnergyR = if (isPlayingState || isCountdownActive) syncedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
-                realBandsL = syncedBandsL,
-                realBandsR = syncedBandsR,
-                realWaveform = syncedWaveform,
-                isMagnetActive = syncedMagnetActive, 
-                isMono = isMono,
-                isCalibrated = isCalibrated, 
-                calibrationCountdown = calibrationCountdown, 
-                player = player, 
-                onScratchStart = { isCountdownActive = false }, 
-                onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
-                isAluminum = isAluminumMode,
-                onToggleAluminum = { isAluminumMode = !isAluminumMode },
-                onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
-                visMode = visMode,
-                onModeChange = { visMode = it },
-                audioQuality = audioQuality,
-                isFavorite = favorites.value.contains(station.name),
-                onToggleFavorite = { toggleFavorite(station.name) }
+        HorizontalPager(
+            state = mainHorizontalPagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !isLocked
+        ) { horizontalPage ->
+            if (horizontalPage == 0) {
+                // MODO: TODAS LAS RADIOS
+                VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize(), key = { it }, userScrollEnabled = !isLocked) { page ->
+                    val actualIndex = ((page % radioStations.size) + radioStations.size) % radioStations.size
+                    val station = radioStations[actualIndex]
+                    val isMetadataValid = metadata.stationName == station.name
+                    RadioScreen(
+                        station = station, 
+                        title = if (pagerState.currentPage == page && mainHorizontalPagerState.currentPage == 0 && isMetadataValid) metadata.title else "En vivo", 
+                        artist = if (pagerState.currentPage == page && mainHorizontalPagerState.currentPage == 0 && isMetadataValid) metadata.artist else station.name, 
+                        artworkUrl = if (pagerState.currentPage == page && mainHorizontalPagerState.currentPage == 0 && isMetadataValid) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
+                        isActive = pagerState.currentPage == page && mainHorizontalPagerState.currentPage == 0, 
+                        isPlaying = isPlayingState, 
+                        isCountdownActive = isCountdownActive, 
+                        onPauseRequest = { isCountdownActive = true }, 
+                        bpm = currentBpm, 
+                        realEnergyL = if (isPlayingState || isCountdownActive) syncedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                        realEnergyR = if (isPlayingState || isCountdownActive) syncedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                        realBandsL = syncedBandsL,
+                        realBandsR = syncedBandsR,
+                        realWaveform = syncedWaveform,
+                        isMagnetActive = syncedMagnetActive, 
+                        isMono = isMono,
+                        isCalibrated = isCalibrated, 
+                        calibrationCountdown = calibrationCountdown, 
+                        player = player, 
+                        onScratchStart = { isCountdownActive = false }, 
+                        onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
+                        isAluminum = isAluminumMode,
+                        onToggleAluminum = { isAluminumMode = !isAluminumMode },
+                        onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
+                        visMode = visMode,
+                        onModeChange = { visMode = it },
+                        audioQuality = audioQuality,
+                        isFavorite = favorites.value.contains(station.name),
+                        onToggleFavorite = { toggleFavorite(station.name) }
+                    )
+                }
+            } else {
+                // MODO: FAVORITAS
+                if (favoriteStations.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "NO TIENES RADIOS FAVORITAS TODAVÍA.\nMARCA ALGUNA CON EL CORAZÓN ❤️",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 20.sp
+                        )
+                    }
+                } else {
+                    VerticalPager(state = favoritesPagerState, modifier = Modifier.fillMaxSize(), userScrollEnabled = !isLocked) { page ->
+                        val actualFavIndex = ((page % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
+                        val station = favoriteStations[actualFavIndex]
+                        val isMetadataValid = metadata.stationName == station.name
+                        RadioScreen(
+                            station = station, 
+                            title = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) metadata.title else "En vivo", 
+                            artist = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) metadata.artist else station.name, 
+                            artworkUrl = if (favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1 && isMetadataValid) (metadata.artworkUrl ?: station.logoUrl) else station.logoUrl, 
+                            isActive = favoritesPagerState.currentPage == page && mainHorizontalPagerState.currentPage == 1, 
+                            isPlaying = isPlayingState, 
+                            isCountdownActive = isCountdownActive, 
+                            onPauseRequest = { isCountdownActive = true }, 
+                            bpm = currentBpm, 
+                            realEnergyL = if (isPlayingState || isCountdownActive) syncedEnergyL * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                            realEnergyR = if (isPlayingState || isCountdownActive) syncedEnergyR * (player?.playbackParameters?.speed ?: 1f) else 0f, 
+                            realBandsL = syncedBandsL,
+                            realBandsR = syncedBandsR,
+                            realWaveform = syncedWaveform,
+                            isMagnetActive = syncedMagnetActive, 
+                            isMono = isMono,
+                            isCalibrated = isCalibrated, 
+                            calibrationCountdown = calibrationCountdown, 
+                            player = player, 
+                            onScratchStart = { isCountdownActive = false }, 
+                            onScratchEnd = { if (!it) { player?.play(); player?.playbackParameters = PlaybackParameters(1.0f) } }, 
+                            isAluminum = isAluminumMode,
+                            onToggleAluminum = { isAluminumMode = !isAluminumMode },
+                            onToggleOscillator = { isOscillatorMode = !isOscillatorMode },
+                            visMode = visMode,
+                            onModeChange = { visMode = it },
+                            audioQuality = audioQuality,
+                            isFavorite = favorites.value.contains(station.name),
+                            onToggleFavorite = { toggleFavorite(station.name) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // INDICADOR SUPERIOR DE MODO (TODAS vs FAVORITAS)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 30.dp)
+                .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "TODAS LAS RADIOS",
+                color = if (mainHorizontalPagerState.currentPage == 0) Color.White else Color.White.copy(alpha = 0.3f),
+                fontSize = 10.sp,
+                fontWeight = if (mainHorizontalPagerState.currentPage == 0) FontWeight.Black else FontWeight.Normal,
+                modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(0) } } }
             )
+            Text(
+                text = "  ←→  ",
+                color = Color.White.copy(alpha = 0.2f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Light
+            )
+            Text(
+                text = "FAVORITAS",
+                color = if (mainHorizontalPagerState.currentPage == 1) Color.White else Color.White.copy(alpha = 0.3f),
+                fontSize = 10.sp,
+                fontWeight = if (mainHorizontalPagerState.currentPage == 1) FontWeight.Black else FontWeight.Normal,
+                modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(1) } } }
+            )
+        }
+
+        // Lógica de cambio de radio al navegar verticalmente en FAVORITAS
+        LaunchedEffect(favoritesPagerState.currentPage, mainHorizontalPagerState.currentPage, favoriteStations) {
+            if (mainHorizontalPagerState.currentPage == 1 && favoriteStations.isNotEmpty()) {
+                val actualFavIndex = ((favoritesPagerState.currentPage % favoriteStations.size) + favoriteStations.size) % favoriteStations.size
+                val station = favoriteStations[actualFavIndex]
+                val globalIndex = radioStations.indexOfFirst { it.name == station.name }
+                if (globalIndex != -1) {
+                    // Sincronizamos el pager principal (background) para que al volver a "Todas" estemos en la misma
+                    val currentGlobal = ((pagerState.currentPage % radioStations.size) + radioStations.size) % radioStations.size
+                    if (currentGlobal != globalIndex) {
+                        val diff = globalIndex - currentGlobal
+                        pagerState.scrollToPage(pagerState.currentPage + diff)
+                    }
+                }
+            }
         }
 
         // LEFT LOCK BUTTON
@@ -542,8 +697,28 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v9.2 (vCode 93) • MEJORAS: Anti-Saturación Dynamic Pro • SUB/LOW Headroom • Sincro Maestro 200ms • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v9.3 (vCode 94) • MEJORAS: Sistema Favoritos v1.0 • Navegación Bi-Dimensional • Sincro Maestro v2 • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        }
+
+        // MENSAJE DE LÍMITE DE FAVORITOS (MODERNO)
+        AnimatedVisibility(
+            visible = favoriteMessage != null,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 80.dp)
+        ) {
+            favoriteMessage?.let { msg ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.Black.copy(alpha = 0.8f))
+                        .border(1.dp, Color.Red.copy(alpha = 0.4f), RoundedCornerShape(24.dp))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(text = msg, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         updateInfo?.let { info ->
@@ -599,19 +774,19 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
     var isCharging by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-                val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
-                val status = intent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
                 if (level != -1 && scale != -1) {
                     batteryLevel = level.toFloat() / scale.toFloat()
                 }
-                isCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
-                             status == android.os.BatteryManager.BATTERY_STATUS_FULL
+                isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                             status == BatteryManager.BATTERY_STATUS_FULL
             }
         }
-        val filter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         context.registerReceiver(receiver, filter)
         onDispose { context.unregisterReceiver(receiver) }
     }
@@ -663,7 +838,7 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().padding(top = 54.dp, start = 4.dp, end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(modifier = Modifier.fillMaxSize().padding(top = 70.dp, start = 4.dp, end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).pointerInput(player) {
                 awaitPointerEventScope {
                     while (true) {
@@ -690,11 +865,11 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     Spacer(Modifier.width(8.dp))
                     Text(text = audioQuality, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE).alpha(0.9f))
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(text = "CANCION : ${title.ifEmpty { "En vivo" }}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 40.dp))
                 if (artist.isNotEmpty()) Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
             }
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Box(modifier = Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
                 if (isActive) SpectrumVisualizer(
                     isPlaying = isPlaying, 
@@ -709,13 +884,39 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                     onModeChange = onModeChange
                 ) 
             }
-            Spacer(modifier = Modifier.height(24.dp))
+
+            // BOTÓN FAVORITO (❤️) — UBICACIÓN: ENTRE ESPECTRO Y VINILO (Lado izquierdo)
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 8.dp, horizontal = 24.dp)
+                    .align(Alignment.Start)
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                    .pointerInput(Unit) { detectTapGestures { onToggleFavorite(); vibratePhone(context, 50) } },
+                contentAlignment = Alignment.Center
+            ) {
+                val heartColor = if (isFavorite) Color(0xFFFF5252).copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.3f)
+                Canvas(modifier = Modifier.size(24.dp)) {
+                    val path = Path().apply {
+                        val w = size.width
+                        val h = size.height
+                        moveTo(w / 2f, h * 0.25f)
+                        cubicTo(w * 0.2f, h * -0.1f, w * -0.3f, h * 0.4f, w / 2f, h)
+                        cubicTo(w * 1.3f, h * 0.4f, w * 0.8f, h * -0.1f, w / 2f, h * 0.25f)
+                    }
+                    drawPath(path, heartColor)
+                }
+            }
+
             val beatDuration = if (bpm > 0) 60000 / bpm else 500
             val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
             val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
             val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
             val finalScale = beatPulse * energyFactor
-            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).pointerInput(player) {
+
+            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = (-30).dp).pointerInput(player) {
                 detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
                     isTouching = true
                     val centerX = size.width / 2f
@@ -796,7 +997,7 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                 }
 
                 // GRUPO DEL VINILO (DINÁMICO - CASI A RAZ DE PANTALLA)
-                Box(Modifier.fillMaxWidth(0.92f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth(0.88f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.Black))
                     Box(Modifier.fillMaxSize(0.97f).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
                         SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
