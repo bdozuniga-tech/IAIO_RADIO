@@ -70,7 +70,7 @@ object RadioData {
         ),
         RadioStation(
             name = "BEETHOVEN FM",
-            url = "http://unlimited3-cl.dps.live/beethovenfm/mp3/icecast.audio",
+            url = "https://hls-audio-cl-1-isp.dps.live/beethovenfm/gotardis/audio/now/livestream1.m3u8",
             backgroundColor = Color.Black,
             logoUrl = "https://www.beethovenfm.cl/wp-content/uploads/2020/03/logo-beethoven.png",
             apiUrl = "https://api.mdstrm.com/metadata/v1/live/5f9c5220c576570774301383"

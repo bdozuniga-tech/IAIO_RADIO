@@ -1,6 +1,6 @@
 {
-  "versionCode": 98,
-  "versionName": "9.3.3 Beethoven Hotfix",
+  "versionCode": 99,
+  "versionName": "9.3.4 Beethoven HLS",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡REPARADO! 🎼 Se ha actualizado el enlace de BEETHOVEN FM al servidor estable de Digital Pro Server. ¡Ya puedes disfrutar del mambo clásico sin cortes! 🤘🔥⚡"
+  "releaseNotes": "¡REPARACIÓN DEFINITIVA! 🎼 Se ha actualizado BEETHOVEN FM a su enlace HLS (m3u8) oficial para máxima estabilidad y compatibilidad. ¡Audio garantizado! 🤘🔥⚡"
 }
