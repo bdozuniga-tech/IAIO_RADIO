@@ -776,7 +776,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v9.4.4 (vCode 104) • MEJORAS: Título Actualización • Layout Refinado • ❤️ Tacto Infalible • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v9.4.3 (vCode 103) • MEJORAS: Layout Refinado (Botones/Vinilo) • ❤️ Tacto Infalible • Sincro Maestro • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
@@ -803,7 +803,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         updateInfo?.let { info ->
             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
                 Column(modifier = Modifier.padding(32.dp).background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp)).border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "RADIO VERTICAL MEJORAS NUEVAS!", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text(text = "¡MAMBO NUEVO! 🚀", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(8.dp))
                     Text(text = "IAIO ha lanzado la Versión ${info.versionName}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, textAlign = TextAlign.Center)
                     if (info.releaseNotes.isNotEmpty()) { Spacer(Modifier.height(12.dp)); Text(text = info.releaseNotes, color = Color.Cyan.copy(alpha = 0.8f), fontSize = 12.sp, textAlign = TextAlign.Center) }
