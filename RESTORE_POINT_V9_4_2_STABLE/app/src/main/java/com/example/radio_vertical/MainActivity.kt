@@ -741,7 +741,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         // ESTE BLOQUE SE HA UNIFICADO EN LOS LaunchedEffect SUPERIORES PARA EVITAR BUCLES
 
         // LEFT LOCK BUTTON
-        Box(modifier = Modifier.padding(bottom = 70.dp, start = 24.dp).align(Alignment.BottomStart).size(64.dp).scale(if (isLockPressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
+        Box(modifier = Modifier.padding(bottom = 48.dp, start = 24.dp).align(Alignment.BottomStart).size(64.dp).scale(if (isLockPressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
             detectTapGestures(onPress = { isLockPressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isLockPressed = false } }, onTap = { isLocked = !isLocked })
         }, contentAlignment = Alignment.Center) {
             Canvas(modifier = Modifier.size(28.dp)) {
@@ -754,7 +754,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
 
         // RIGHT PAUSE/PLAY BUTTON
-        Box(modifier = Modifier.padding(bottom = 70.dp, end = 24.dp).align(Alignment.BottomEnd).size(64.dp).scale(if (isPausePressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
+        Box(modifier = Modifier.padding(bottom = 48.dp, end = 24.dp).align(Alignment.BottomEnd).size(64.dp).scale(if (isPausePressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
             detectTapGestures(onPress = { isPausePressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isPausePressed = false } }, onTap = { if (isPlayingState) isCountdownActive = true else isStartingActive = true })
         }, contentAlignment = Alignment.Center) {
             Canvas(modifier = Modifier.size(24.dp)) {
@@ -766,7 +766,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
 
         // CENTER SIGNATURE: * IAIO *
-        Row(modifier = Modifier.padding(bottom = 90.dp).align(Alignment.BottomCenter).pointerInput(Unit) {
+        Row(modifier = Modifier.padding(bottom = 68.dp).align(Alignment.BottomCenter).pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) { awaitFirstDown(); isShowInfo = true; vibratePhone(context, 20); while (true) { val event = awaitPointerEvent(); if (event.changes.any { !it.pressed }) { isShowInfo = false; break } } }
             }
@@ -776,7 +776,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
             val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(text = if (isShowInfo) "IAIO RADIO v9.4.3 (vCode 103) • MEJORAS: Layout Refinado (Botones/Vinilo) • ❤️ Tacto Infalible • Sincro Maestro • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = if (isShowInfo) "IAIO RADIO v9.4.2 (vCode 102) • MEJORAS: Ajuste Vertical Vinilo • Lógica ❤️ Perfeccionada • Beethoven Sync • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
             Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
@@ -964,98 +964,145 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
                 ) 
             }
 
-            // CONTENEDOR UNIFICADO PARA VINILO Y FAVORITO (Control de Z-Order)
-            Box(modifier = Modifier.fillMaxWidth()) {
-                val beatDuration = if (bpm > 0) 60000 / bpm else 500
-                val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
-                val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
-                val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
-                val finalScale = beatPulse * energyFactor
+            // BOTÓN FAVORITO (❤️) — UBICACIÓN: ENTRE ESPECTRO Y VINILO (Lado izquierdo)
+            val heartPulseTiming = if (bpm > 0) 60000 / bpm else 800
+            val heartPulseAnim = rememberInfiniteTransition(label = "heartPulse")
+            val heartPulseAlpha by heartPulseAnim.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(heartPulseTiming / 2), RepeatMode.Reverse),
+                label = "alpha"
+            )
 
-                // 1. VINILO (Al fondo)
-                Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = 10.dp).pointerInput(player) {
-                    detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
-                        isTouching = true
-                        val centerX = size.width / 2f
-                        val centerY = size.height / 2f
-                        var initialAngle = Math.toDegrees(atan2((it.y - centerY).toDouble(), (it.x - centerX).toDouble())).toFloat()
-                        var isDragging = false; PlaybackService.stutterProcessor.isScratching = true
-                        try {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent(); vibratePhone(context, 5); val pointer = event.changes.firstOrNull { it.pressed }
-                                    if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
-                                    val currentAngle = Math.toDegrees(atan2((pointer.position.y - centerY).toDouble(), (pointer.position.x - centerX).toDouble())).toFloat()
-                                    var delta = currentAngle - initialAngle
-                                    if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
-                                    if (Math.abs(delta) > 0.5f || isDragging) { if (!isDragging) { isDragging = true; onScratchStart() }; currentRotation = (currentRotation + delta) % 360f; PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f); initialAngle = currentAngle }
-                                }
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 8.dp, horizontal = 24.dp)
+                    .align(Alignment.Start)
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                    .pointerInput(Unit) { detectTapGestures { onToggleFavorite(); vibratePhone(context, 50) } },
+                contentAlignment = Alignment.Center
+            ) {
+                // LÓGICA CORREGIDA: Solo palpita y reacciona al ritmo si ES FAVORITA
+                val heartColor = if (isFavorite) {
+                    if (isMagnetActive) Color.Cyan 
+                    else Color(0xFFFF5252).copy(alpha = heartPulseAlpha)
+                } else {
+                    Color.Gray.copy(alpha = 0.2f)
+                }
+                
+                Canvas(modifier = Modifier.size(24.dp)) {
+                    val path = Path().apply {
+                        val w = size.width
+                        val h = size.height
+                        moveTo(w / 2f, h * 0.25f)
+                        cubicTo(w * 0.2f, h * -0.1f, w * -0.3f, h * 0.4f, w / 2f, h)
+                        cubicTo(w * 1.3f, h * 0.4f, w * 0.8f, h * -0.1f, w / 2f, h * 0.25f)
+                    }
+                    drawPath(path, heartColor)
+                }
+            }
+
+            val beatDuration = if (bpm > 0) 60000 / bpm else 500
+            val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
+            val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
+            val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
+            val finalScale = beatPulse * energyFactor
+
+            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = (-80).dp).pointerInput(player) {
+                detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
+                    isTouching = true
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    var initialAngle = Math.toDegrees(atan2((it.y - centerY).toDouble(), (it.x - centerX).toDouble())).toFloat()
+                    var isDragging = false; PlaybackService.stutterProcessor.isScratching = true
+                    try {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(); vibratePhone(context, 5); val pointer = event.changes.firstOrNull { it.pressed }
+                                if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
+                                val currentAngle = Math.toDegrees(atan2((pointer.position.y - centerY).toDouble(), (pointer.position.x - centerX).toDouble())).toFloat()
+                                var delta = currentAngle - initialAngle
+                                if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
+                                if (Math.abs(delta) > 0.5f || isDragging) { if (!isDragging) { isDragging = true; onScratchStart() }; currentRotation = (currentRotation + delta) % 360f; PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f); initialAngle = currentAngle }
                             }
-                        } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
-                    })
-                }, contentAlignment = Alignment.Center) {
-                    // ANILLO DE BATERÍA (MOTO G STYLE)
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val strokeWidth = 5.dp.toPx() 
-                        val radius = (size.minDimension / 2) - (strokeWidth / 2)
-                        val batteryColor = when {
-                            isCharging -> Color(0xFF00FF41)
-                            batteryLevel > 0.5f -> Color(0xFF00FF41)
-                            batteryLevel > 0.2f -> Color.Yellow
-                            else -> Color.Red
                         }
-                        val currentSweep = if (isCharging) chargingSweep else batteryLevel
-                        val currentAlpha = if (isCharging) chargingAlpha else if (batteryLevel <= 0.1f) lowBatteryAlpha else 1.0f
-                        drawArc(color = batteryColor.copy(alpha = currentAlpha), startAngle = -90f, sweepAngle = 360f * currentSweep, useCenter = false, topLeft = Offset(strokeWidth / 2, strokeWidth / 2), size = Size(radius * 2, radius * 2), style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
-                        if (isCharging || batteryLevel > 0.15f || batteryLevel <= 0.1f) {
-                            val glowAlpha = if (isCharging) 0.5f else 0.2f
-                            drawArc(color = batteryColor.copy(alpha = glowAlpha * currentAlpha), startAngle = -90f, sweepAngle = 360f * currentSweep, useCenter = false, topLeft = Offset(strokeWidth / 2, strokeWidth / 2), size = Size(radius * 2, radius * 2), style = Stroke(width = strokeWidth * 2.5f, cap = StrokeCap.Round))
-                        }
+                    } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
+                })
+            }, contentAlignment = Alignment.Center) {
+                // ANILLO DE BATERÍA (MOTO G STYLE - DYNAMICO TOTAL)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val strokeWidth = 5.dp.toPx() 
+                    val radius = (size.minDimension / 2) - (strokeWidth / 2)
+                    
+                    val batteryColor = when {
+                        isCharging -> Color(0xFF00FF41) // VERDE FUERTE INCANDESCENTE (IAIO GREEN)
+                        batteryLevel > 0.5f -> Color(0xFF00FF41) // Verde
+                        batteryLevel > 0.2f -> Color.Yellow
+                        else -> Color.Red
                     }
 
-                    // GRUPO DEL VINILO
-                    Box(Modifier.fillMaxWidth(0.88f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
-                        Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.Black))
-                        Box(Modifier.fillMaxSize(0.97f).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
-                            SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
-                        }
-                        Canvas(Modifier.fillMaxSize(0.96f)) {
-                            drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
-                            drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
-                        }
+                    val currentSweep = if (isCharging) chargingSweep else batteryLevel
+                    val isEmergency = batteryLevel <= 0.1f && !isCharging
+                    val currentAlpha = when {
+                        isCharging -> chargingAlpha
+                        isEmergency -> lowBatteryAlpha
+                        else -> 1.0f
                     }
-                    Box(modifier = Modifier.size(10.dp).scale(if (isPlaying) finalScale else 1f).clip(CircleShape).background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
+
+                    // DIBUJAMOS SOLO EL NIVEL ACTIVO (SIN FONDO FANTASMA)
+                    drawArc(
+                        color = batteryColor.copy(alpha = currentAlpha),
+                        startAngle = -90f,
+                        sweepAngle = 360f * currentSweep,
+                        useCenter = false,
+                        topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                        size = Size(radius * 2, radius * 2),
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    )
+                    
+                    // EFECTO DIFUMINADO DE EMERGENCIA (Bajo 10%)
+                    if (isEmergency) {
+                        drawArc(
+                            color = batteryColor.copy(alpha = currentAlpha * 0.3f),
+                            startAngle = -90f,
+                            sweepAngle = 360f * currentSweep,
+                            useCenter = false,
+                            topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                            size = Size(radius * 2, radius * 2),
+                            style = Stroke(width = strokeWidth * 4f, cap = StrokeCap.Round)
+                        )
+                    }
+
+                    // Brillo Incandescente (Más fuerte si está cargando)
+                    if (isCharging || batteryLevel > 0.15f || isEmergency) {
+                        val glowAlpha = if (isCharging) 0.5f else 0.2f
+                        drawArc(
+                            color = batteryColor.copy(alpha = glowAlpha * currentAlpha),
+                            startAngle = -90f,
+                            sweepAngle = 360f * currentSweep,
+                            useCenter = false,
+                            topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                            size = Size(radius * 2, radius * 2),
+                            style = Stroke(width = strokeWidth * 2.5f, cap = StrokeCap.Round)
+                        )
+                    }
                 }
 
-                // 2. BOTÓN FAVORITO (❤️) — Arriba de todo (Z-Order)
-                val heartPulseTiming = if (bpm > 0) 60000 / bpm else 800
-                val heartPulseAnim = rememberInfiniteTransition(label = "heartPulse")
-                val heartPulseAlpha by heartPulseAnim.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(heartPulseTiming / 2), RepeatMode.Reverse), label = "alpha")
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 12.dp, top = 8.dp)
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                        .pointerInput(Unit) { detectTapGestures(onTap = { onToggleFavorite(); vibratePhone(context, 50) }) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    val heartColor = if (isFavorite) {
-                        if (isMagnetActive) Color.Cyan else Color(0xFFFF5252).copy(alpha = heartPulseAlpha)
-                    } else {
-                        Color.White.copy(alpha = 0.3f)
+                // GRUPO DEL VINILO (DINÁMICO - CASI A RAZ DE PANTALLA)
+                Box(Modifier.fillMaxWidth(0.88f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.Black))
+                    Box(Modifier.fillMaxSize(0.97f).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
+                        SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
                     }
-                    Canvas(modifier = Modifier.size(24.dp)) {
-                        val path = Path().apply {
-                            val w = size.width; val h = size.height
-                            moveTo(w / 2f, h * 0.25f); cubicTo(w * 0.2f, h * -0.1f, w * -0.3f, h * 0.4f, w / 2f, h); cubicTo(w * 1.3f, h * 0.4f, w * 0.8f, h * -0.1f, w / 2f, h * 0.25f)
-                        }
-                        drawPath(path, heartColor)
+                    Canvas(Modifier.fillMaxSize(0.96f)) {
+                        drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
+                        drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
                     }
                 }
+                Box(modifier = Modifier.size(10.dp).scale(if (isPlaying) finalScale else 1f).clip(CircleShape).background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
             }
             Spacer(Modifier.height(56.dp))
         }
