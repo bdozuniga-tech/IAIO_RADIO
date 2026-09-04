@@ -7,14 +7,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.content.res.Configuration
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -170,9 +162,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
     var isAluminumMode by remember { mutableStateOf(prefs.getBoolean("is_aluminum", false)) }
     var isOscillatorMode by remember { mutableStateOf(prefs.getBoolean("is_oscillator", false)) }
 
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     val metadata by radioViewModel.metadata.collectAsState()
     val initialPage = (Int.MAX_VALUE / 2 / radioStations.size) * radioStations.size + savedIndex
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
@@ -222,7 +211,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         radioStations.filter { favorites.value.contains(it.name) }
     }
     var favoriteMessage by remember { mutableStateOf<String?>(null) }
-    var stationToRemove by remember { mutableStateOf<String?>(null) }
 
     // ESTADOS PARA ACTUALIZACIÓN AUTOMÁTICA (OTA)
     val updateManager = remember { UpdateManager(context) }
@@ -244,28 +232,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         } catch (e: Exception) {
             Log.e("RadioApp", "Update check failed: ${e.message}")
         }
-    }
-
-    // GIROSCOPIO / ACELERÓMETRO PARA TILT (GLOBAL PARA FONDO Y VISUALIZADOR)
-    var tiltX by remember { mutableFloatStateOf(0f) }
-    var tiltY by remember { mutableFloatStateOf(0f) }
-    val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
-
-    DisposableEffect(isLandscape) {
-        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent?) {
-                event?.let {
-                    val rawX = if (isLandscape) event.values[1] else event.values[0]
-                    val rawY = if (isLandscape) event.values[0] else (event.values[1] - 6.5f)
-                    tiltX = tiltX * 0.92f + rawX * 0.08f
-                    tiltY = tiltY * 0.92f + rawY * 0.08f
-                }
-            }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-        }
-        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
-        onDispose { sensorManager.unregisterListener(listener) }
     }
 
     // SINCRONIZACIÓN DE NAVEGACIÓN (FUENTE DE VERDAD: PlaybackService)
@@ -493,9 +459,30 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
 
     fun toggleFavorite(stationName: String) {
         val current = favorites.value.toMutableSet()
+        val isRemovingActive = current.contains(stationName) && 
+                               currentStationName == stationName && 
+                               PlaybackService.navigationMode.value == NavigationMode.FAVORITES
+
         if (current.contains(stationName)) {
-            stationToRemove = stationName
-            return
+            // LÓGICA DE ELIMINACIÓN INTELIGENTE EN MODO FAVORITAS
+            if (isRemovingActive && favoriteStations.size > 1) {
+                val currentIndexInFavs = favoriteStations.indexOfFirst { it.name == stationName }
+                if (currentIndexInFavs != -1) {
+                    // Decidir la siguiente radio (la siguiente en la lista, o la anterior si es la última)
+                    val nextIndex = if (currentIndexInFavs < favoriteStations.size - 1) currentIndexInFavs + 1 else currentIndexInFavs - 1
+                    val nextStation = favoriteStations[nextIndex]
+                    
+                    // Disparamos la navegación visual y de audio ANTES de que la lista cambie
+                    scope.launch {
+                        val direction = if (currentIndexInFavs < favoriteStations.size - 1) 1 else -1
+                        favoritesPagerState.animateScrollToPage(favoritesPagerState.currentPage + direction)
+                        PlaybackService.updateCurrentStation(nextStation.name)
+                    }
+                }
+            }
+            
+            current.remove(stationName)
+            vibratePhone(context, 30)
         } else {
             if (current.size >= 10) {
                 favoriteMessage = "Superaste el límite de 10 radios favoritas."
@@ -511,36 +498,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
         }
         favorites.value = current
         prefs.edit().putStringSet("favorites", current).commit() 
-    }
-
-    fun confirmRemoveFavorite(stationName: String) {
-        val current = favorites.value.toMutableSet()
-        val isRemovingActive = current.contains(stationName) && 
-                               currentStationName == stationName && 
-                               PlaybackService.navigationMode.value == NavigationMode.FAVORITES
-
-        // LÓGICA DE ELIMINACIÓN INTELIGENTE EN MODO FAVORITAS
-        if (isRemovingActive && favoriteStations.size > 1) {
-            val currentIndexInFavs = favoriteStations.indexOfFirst { it.name == stationName }
-            if (currentIndexInFavs != -1) {
-                // Decidir la siguiente radio (la siguiente en la lista, o la anterior si es la última)
-                val nextIndex = if (currentIndexInFavs < favoriteStations.size - 1) currentIndexInFavs + 1 else currentIndexInFavs - 1
-                val nextStation = favoriteStations[nextIndex]
-                
-                // Disparamos la navegación visual y de audio ANTES de que la lista cambie
-                scope.launch {
-                    val direction = if (currentIndexInFavs < favoriteStations.size - 1) 1 else -1
-                    favoritesPagerState.animateScrollToPage(favoritesPagerState.currentPage + direction)
-                    PlaybackService.updateCurrentStation(nextStation.name)
-                }
-            }
-        }
-        
-        current.remove(stationName)
-        vibratePhone(context, 30)
-        favorites.value = current
-        prefs.edit().putStringSet("favorites", current).commit()
-        stationToRemove = null
     }
 
     // Sincronizar FAVORITOS con el SERVICIO
@@ -645,28 +602,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             }
         }
     }) {
-        // FONDO DE ESTRELLAS GLOBAL (Si el modo es el 24)
-        if (visMode == 24 && isPlayingState) {
-            val bpmValue by PlaybackService.currentBpm.collectAsState()
-            val pulseTiming = if (bpmValue > 0) 60000 / bpmValue else 800
-            val beatPulseAnim = rememberInfiniteTransition(label = "bgStarBeatPulse")
-            val beatAlpha by beatPulseAnim.animateFloat(
-                initialValue = 0.4f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(pulseTiming / 2), RepeatMode.Reverse),
-                label = "alpha"
-            )
-            
-            StarfieldVisualizer(
-                isPlaying = isPlayingState,
-                energy = (syncedEnergyL + syncedEnergyR) / 2f,
-                isMagnetActive = syncedMagnetActive,
-                beatAlpha = beatAlpha,
-                tiltX = tiltX,
-                tiltY = tiltY,
-                modifier = Modifier.fillMaxSize().alpha(0.6f) // Un poco más tenue para el fondo
-            )
-        }
         HorizontalPager(
             state = mainHorizontalPagerState,
             modifier = Modifier.fillMaxSize(),
@@ -707,9 +642,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                         onModeChange = { visMode = it },
                         audioQuality = audioQuality,
                         isFavorite = favorites.value.contains(station.name),
-                        onToggleFavorite = { toggleFavorite(station.name) },
-                        tiltX = tiltX,
-                        tiltY = tiltY
+                        onToggleFavorite = { toggleFavorite(station.name) }
                     )
                 }
             } else {
@@ -766,9 +699,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                                 onModeChange = { visMode = it },
                                 audioQuality = audioQuality,
                                 isFavorite = favorites.value.contains(station.name),
-                                onToggleFavorite = { toggleFavorite(station.name) },
-                                tiltX = tiltX,
-                                tiltY = tiltY
+                                onToggleFavorite = { toggleFavorite(station.name) }
                             )
                         }
                     }
@@ -776,81 +707,77 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             }
         }
 
-        if (!isLandscape) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 30.dp)
-                    .align(Alignment.TopCenter),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "TODAS LAS RADIOS",
-                    color = if (mainHorizontalPagerState.currentPage == 0) Color.White else Color.White.copy(alpha = 0.3f),
-                    fontSize = 10.sp,
-                    fontWeight = if (mainHorizontalPagerState.currentPage == 0) FontWeight.Black else FontWeight.Normal,
-                    modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(0) } } }
-                )
-                Text(
-                    text = "  ←→  ",
-                    color = Color.White.copy(alpha = 0.2f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Light
-                )
-                Text(
-                    text = "FAVORITAS",
-                    color = if (mainHorizontalPagerState.currentPage == 1) Color.White else Color.White.copy(alpha = 0.3f),
-                    fontSize = 10.sp,
-                    fontWeight = if (mainHorizontalPagerState.currentPage == 1) FontWeight.Black else FontWeight.Normal,
-                    modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(1) } } }
-                )
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 30.dp)
+                .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "TODAS LAS RADIOS",
+                color = if (mainHorizontalPagerState.currentPage == 0) Color.White else Color.White.copy(alpha = 0.3f),
+                fontSize = 10.sp,
+                fontWeight = if (mainHorizontalPagerState.currentPage == 0) FontWeight.Black else FontWeight.Normal,
+                modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(0) } } }
+            )
+            Text(
+                text = "  ←→  ",
+                color = Color.White.copy(alpha = 0.2f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Light
+            )
+            Text(
+                text = "FAVORITAS",
+                color = if (mainHorizontalPagerState.currentPage == 1) Color.White else Color.White.copy(alpha = 0.3f),
+                fontSize = 10.sp,
+                fontWeight = if (mainHorizontalPagerState.currentPage == 1) FontWeight.Black else FontWeight.Normal,
+                modifier = Modifier.pointerInput(Unit) { detectTapGestures { scope.launch { mainHorizontalPagerState.animateScrollToPage(1) } } }
+            )
         }
 
         // Lógica de cambio de radio al navegar verticalmente en FAVORITAS
         // ESTE BLOQUE SE HA UNIFICADO EN LOS LaunchedEffect SUPERIORES PARA EVITAR BUCLES
 
-        if (!isLandscape) {
-            // LEFT LOCK BUTTON
-            Box(modifier = Modifier.padding(bottom = 70.dp, start = 24.dp).align(Alignment.BottomStart).size(64.dp).scale(if (isLockPressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
-                detectTapGestures(onPress = { isLockPressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isLockPressed = false } }, onTap = { isLocked = !isLocked })
-            }, contentAlignment = Alignment.Center) {
-                Canvas(modifier = Modifier.size(28.dp)) {
-                    val w = size.width; val h = size.height
-                    val lockColor = if (isLocked) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
-                    drawRoundRect(color = lockColor, topLeft = Offset(0f, h * 0.4f), size = Size(w, h * 0.6f), cornerRadius = CornerRadius(4.dp.toPx()))
-                    if (isLocked) drawArc(lockColor, 180f, 180f, false, Offset(w * 0.2f, h * 0.1f), Size(w * 0.6f, h * 0.6f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-                    else drawArc(lockColor, 180f, 180f, false, Offset(w * 0.2f, -h * 0.15f), Size(w * 0.6f, h * 0.6f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-                }
+        // LEFT LOCK BUTTON
+        Box(modifier = Modifier.padding(bottom = 70.dp, start = 24.dp).align(Alignment.BottomStart).size(64.dp).scale(if (isLockPressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
+            detectTapGestures(onPress = { isLockPressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isLockPressed = false } }, onTap = { isLocked = !isLocked })
+        }, contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.size(28.dp)) {
+                val w = size.width; val h = size.height
+                val lockColor = if (isLocked) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
+                drawRoundRect(color = lockColor, topLeft = Offset(0f, h * 0.4f), size = Size(w, h * 0.6f), cornerRadius = CornerRadius(4.dp.toPx()))
+                if (isLocked) drawArc(lockColor, 180f, 180f, false, Offset(w * 0.2f, h * 0.1f), Size(w * 0.6f, h * 0.6f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                else drawArc(lockColor, 180f, 180f, false, Offset(w * 0.2f, -h * 0.15f), Size(w * 0.6f, h * 0.6f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
             }
+        }
 
-            // RIGHT PAUSE/PLAY BUTTON
-            Box(modifier = Modifier.padding(bottom = 70.dp, end = 24.dp).align(Alignment.BottomEnd).size(64.dp).scale(if (isPausePressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
-                detectTapGestures(onPress = { isPausePressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isPausePressed = false } }, onTap = { if (isPlayingState) isCountdownActive = true else isStartingActive = true })
-            }, contentAlignment = Alignment.Center) {
-                Canvas(modifier = Modifier.size(24.dp)) {
-                    val w = size.width; val h = size.height
-                    val iconColor = if (!isPlayingState) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
-                    if (isPlayingState) { val barW = w * 0.3f; drawRect(iconColor, Offset(0f, 0f), Size(barW, h)); drawRect(iconColor, Offset(w - barW, 0f), Size(barW, h)) }
-                    else { val path = Path().apply { moveTo(0f, 0f); lineTo(w, h / 2f); lineTo(0f, h); close() }; drawPath(path, iconColor) }
-                }
+        // RIGHT PAUSE/PLAY BUTTON
+        Box(modifier = Modifier.padding(bottom = 70.dp, end = 24.dp).align(Alignment.BottomEnd).size(64.dp).scale(if (isPausePressed) 1.25f else 1f).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape).pointerInput(Unit) {
+            detectTapGestures(onPress = { isPausePressed = true; vibratePhone(context, 50); try { awaitRelease() } finally { isPausePressed = false } }, onTap = { if (isPlayingState) isCountdownActive = true else isStartingActive = true })
+        }, contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.size(24.dp)) {
+                val w = size.width; val h = size.height
+                val iconColor = if (!isPlayingState) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.3f)
+                if (isPlayingState) { val barW = w * 0.3f; drawRect(iconColor, Offset(0f, 0f), Size(barW, h)); drawRect(iconColor, Offset(w - barW, 0f), Size(barW, h)) }
+                else { val path = Path().apply { moveTo(0f, 0f); lineTo(w, h / 2f); lineTo(0f, h); close() }; drawPath(path, iconColor) }
             }
+        }
 
-            // CENTER SIGNATURE: * IAIO *
-            Row(modifier = Modifier.padding(bottom = 72.dp).align(Alignment.BottomCenter).pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) { awaitFirstDown(); isShowInfo = true; vibratePhone(context, 20); while (true) { val event = awaitPointerEvent(); if (event.changes.any { !it.pressed }) { isShowInfo = false; break } } }
-                }
-            }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val pulse = if (currentBpm > 0) 60000 / currentBpm else 800
-                val anim = rememberInfiniteTransition(label = "iaioLiveAnim")
-                val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
-                val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
-                Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                Text(text = if (isShowInfo) "IAIO RADIO v9.5 (vCode 106) • MEJORAS: Velocímetro GPS 🏎️ • Landscape Full • ❤️ Perfeccionado • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
-                Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        // CENTER SIGNATURE: * IAIO *
+        Row(modifier = Modifier.padding(bottom = 72.dp).align(Alignment.BottomCenter).pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) { awaitFirstDown(); isShowInfo = true; vibratePhone(context, 20); while (true) { val event = awaitPointerEvent(); if (event.changes.any { !it.pressed }) { isShowInfo = false; break } } }
             }
+        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val pulse = if (currentBpm > 0) 60000 / currentBpm else 800
+            val anim = rememberInfiniteTransition(label = "iaioLiveAnim")
+            val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
+            val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
+            Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            Text(text = if (isShowInfo) "IAIO RADIO v9.4.5 (vCode 105) • MEJORAS: Ajuste Fino Firma • RADIO VERTICAL MEJORAS! • Layout Maestro • ❤️ Perfeccionado • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+            Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
         }
 
         // MENSAJE DE LÍMITE DE FAVORITOS (MODERNO)
@@ -893,72 +820,6 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 }
             }
         }
-
-        stationToRemove?.let { name ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.85f))
-                    .pointerInput(Unit) { detectTapGestures { stationToRemove = null } },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(32.dp)
-                        .background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(24.dp)
-                        .pointerInput(Unit) { detectTapGestures { /* No cerrar si se toca el cuadro */ } },
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "¿ELIMINAR DE FAVORITOS?",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Black,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "¿Estás seguro de querer realizar este cambio?\nSe quitará '$name' de tu lista.",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 20.sp
-                    )
-                    Spacer(Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "CANCELAR",
-                            color = Color.White.copy(alpha = 0.4f),
-                            modifier = Modifier
-                                .weight(1f)
-                                .pointerInput(Unit) { detectTapGestures { stationToRemove = null } }
-                                .padding(vertical = 12.dp),
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "ELIMINAR",
-                            color = Color(0xFFFF5252),
-                            modifier = Modifier
-                                .weight(1f)
-                                .background(Color(0xFFFF5252).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                .pointerInput(Unit) {
-                                    detectTapGestures { confirmRemoveFavorite(name) }
-                                }
-                                .padding(vertical = 12.dp),
-                            fontWeight = FontWeight.Black,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -982,50 +843,10 @@ fun DefaultVinyl(referentialUrl: String?, isAluminum: Boolean) {
 
 @OptIn(UnstableApi::class)
 @Composable
-fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realBandsL: FloatArray, realBandsR: FloatArray, realWaveform: FloatArray, isMagnetActive: Boolean, isMono: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String, isFavorite: Boolean, onToggleFavorite: () -> Unit, tiltX: Float, tiltY: Float) {
+fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl: String?, isActive: Boolean, isPlaying: Boolean, isCountdownActive: Boolean, onPauseRequest: () -> Unit, bpm: Int, realEnergyL: Float, realEnergyR: Float, realBandsL: FloatArray, realBandsR: FloatArray, realWaveform: FloatArray, isMagnetActive: Boolean, isMono: Boolean, isCalibrated: Boolean, calibrationCountdown: Int, player: Player?, onScratchStart: () -> Unit, onScratchEnd: (Boolean) -> Unit, isAluminum: Boolean, onToggleAluminum: () -> Unit, onToggleOscillator: () -> Unit, visMode: Int, onModeChange: (Int) -> Unit, audioQuality: String, isFavorite: Boolean, onToggleFavorite: () -> Unit) {
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    
     var currentRotation by remember { mutableStateOf(0f) }
     var isTouching by remember { mutableStateOf(false) }
-
-    // VELOCÍMETRO GPS (SOLO PARA LANDSCAPE)
-    var currentSpeed by remember { mutableFloatStateOf(0f) }
-    val locationManager = remember { context.getSystemService(Context.LOCATION_SERVICE) as LocationManager }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        // Si se conceden, el efecto siguiente se activará
-    }
-
-    DisposableEffect(Unit) {
-        val listener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                // El método .speed devuelve m/s. Multiplicamos por 3.6 para km/h
-                currentSpeed = location.speed * 3.6f
-            }
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
-            @Deprecated("Deprecated in Java")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-        }
-
-        try {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, listener)
-            } else {
-                locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-            }
-        } catch (e: Exception) {
-            Log.e("RadioApp", "Error al iniciar GPS: ${e.message}")
-        }
-
-        onDispose {
-            locationManager.removeUpdates(listener)
-        }
-    }
 
     // MONITOR DE BATERÍA (ESTILO MOTO G)
     var batteryLevel by remember { mutableFloatStateOf(1f) }
@@ -1095,173 +916,148 @@ fun RadioScreen(station: RadioStation, title: String, artist: String, artworkUrl
         }
     }
 
-    if (isLandscape) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            SpectrumVisualizer(
-                isPlaying = isPlaying,
-                energyL = realEnergyL,
-                energyR = realEnergyR,
-                bandsL = realBandsL,
-                bandsR = realBandsR,
-                waveform = realWaveform,
-                isMagnetActive = isMagnetActive,
-                isMono = isMono,
-                currentMode = visMode,
-                currentSpeed = currentSpeed,
-                tiltX = tiltX,
-                tiltY = tiltY, // Nuevo eje Y
-                onModeChange = onModeChange,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    } else {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize().padding(top = 70.dp, start = 4.dp, end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).pointerInput(player) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitFirstDown(requireUnconsumed = false)
-                            if (player?.isPlaying == false) { val up = waitForUpOrCancellation(); if (up != null) player.play() }
-                            else {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    if (event.changes.count { it.pressed } >= 2) { onPauseRequest(); while (true) { if (awaitPointerEvent().changes.none { it.pressed }) break }; break }
-                                    if (event.changes.none { it.pressed }) break
-                                }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().padding(top = 70.dp, start = 4.dp, end = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).pointerInput(player) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitFirstDown(requireUnconsumed = false)
+                        if (player?.isPlaying == false) { val up = waitForUpOrCancellation(); if (up != null) player.play() }
+                        else {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.count { it.pressed } >= 2) { onPauseRequest(); while (true) { if (awaitPointerEvent().changes.none { it.pressed }) break }; break }
+                                if (event.changes.none { it.pressed }) break
                             }
-                        }
-                    }
-                }, horizontalAlignment = Alignment.Start) {
-                    Text(text = "RADIO : ${station.name}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, spacing = MarqueeSpacing(48.dp)))
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val pulse = if (bpm > 0) 60000 / bpm else 800
-                        val anim = rememberInfiniteTransition()
-                        val liveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse))
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(if (isMagnetActive) Color.Cyan else Color.Red.copy(alpha = liveAlpha)))
-                        Text(text = if (!isCalibrated) "ANALYZING (${calibrationCountdown}s)" else "LIVE", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.alpha(0.8f))
-                        Spacer(Modifier.width(8.dp))
-                        Text(text = audioQuality, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE).alpha(0.9f))
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(text = "CANCION : ${title.ifEmpty { "En vivo" }}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 40.dp))
-                    if (artist.isNotEmpty()) Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Box(modifier = Modifier.fillMaxWidth().height(130.dp).pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
-                    if (isActive) SpectrumVisualizer(
-                        isPlaying = isPlaying, 
-                        energyL = realEnergyL, 
-                        energyR = realEnergyR, 
-                        bandsL = realBandsL,
-                        bandsR = realBandsR,
-                        waveform = realWaveform, 
-                        isMagnetActive = isMagnetActive, 
-                        isMono = isMono,
-                        currentMode = visMode, 
-                        currentSpeed = currentSpeed,
-                        tiltX = tiltX,
-                        tiltY = tiltY,
-                        onModeChange = onModeChange,
-                        modifier = Modifier.fillMaxSize()
-                    ) 
-                }
-
-                // CONTENEDOR UNIFICADO PARA VINILO Y FAVORITO (Control de Z-Order)
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    val beatDuration = if (bpm > 0) 60000 / bpm else 500
-                    val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
-                    val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
-                    val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
-                    val finalScale = beatPulse * energyFactor
-
-                    // 1. VINILO (Al fondo)
-                    Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = 10.dp).pointerInput(player) {
-                        detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
-                            isTouching = true
-                            val centerX = size.width / 2f
-                            val centerY = size.height / 2f
-                            var initialAngle = Math.toDegrees(atan2((it.y - centerY).toDouble(), (it.x - centerX).toDouble())).toFloat()
-                            var isDragging = false; PlaybackService.stutterProcessor.isScratching = true
-                            try {
-                                awaitPointerEventScope {
-                                    while (true) {
-                                        val event = awaitPointerEvent(); vibratePhone(context, 5); val pointer = event.changes.firstOrNull { it.pressed }
-                                        if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
-                                        val currentAngle = Math.toDegrees(atan2((pointer.position.y - centerY).toDouble(), (pointer.position.x - centerX).toDouble())).toFloat()
-                                        var delta = currentAngle - initialAngle
-                                        if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
-                                        if (Math.abs(delta) > 0.5f || isDragging) { if (!isDragging) { isDragging = true; onScratchStart() }; currentRotation = (currentRotation + delta) % 360f; PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f); initialAngle = currentAngle }
-                                    }
-                                }
-                            } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
-                        })
-                    }, contentAlignment = Alignment.Center) {
-                        // ANILLO DE BATERÍA (MOTO G STYLE)
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val strokeWidth = 5.dp.toPx() 
-                            val radius = (size.minDimension / 2) - (strokeWidth / 2)
-                            val batteryColor = when {
-                                isCharging -> Color(0xFF00FF41)
-                                batteryLevel > 0.5f -> Color(0xFF00FF41)
-                                batteryLevel > 0.2f -> Color.Yellow
-                                else -> Color.Red
-                            }
-                            val currentSweep = if (isCharging) chargingSweep else batteryLevel
-                            val currentAlpha = if (isCharging) chargingAlpha else if (batteryLevel <= 0.1f) lowBatteryAlpha else 1.0f
-                            drawArc(color = batteryColor.copy(alpha = currentAlpha), startAngle = -90f, sweepAngle = 360f * currentSweep, useCenter = false, topLeft = Offset(strokeWidth / 2, strokeWidth / 2), size = Size(radius * 2, radius * 2), style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
-                            if (isCharging || batteryLevel > 0.15f || batteryLevel <= 0.1f) {
-                                val glowAlpha = if (isCharging) 0.5f else 0.2f
-                                drawArc(color = batteryColor.copy(alpha = glowAlpha * currentAlpha), startAngle = -90f, sweepAngle = 360f * currentSweep, useCenter = false, topLeft = Offset(strokeWidth / 2, strokeWidth / 2), size = Size(radius * 2, radius * 2), style = Stroke(width = strokeWidth * 2.5f, cap = StrokeCap.Round))
-                            }
-                        }
-
-                        // GRUPO DEL VINILO
-                        Box(Modifier.fillMaxWidth(0.88f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
-                            Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.Black))
-                            Box(Modifier.fillMaxSize(0.97f).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
-                                SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
-                            }
-                            Canvas(Modifier.fillMaxSize(0.96f)) {
-                                drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
-                                drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
-                            }
-                        }
-                        Box(modifier = Modifier.size(10.dp).scale(if (isPlaying) finalScale else 1f).clip(CircleShape).background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
-                    }
-
-                    // 2. BOTÓN FAVORITO (❤️) — Arriba de todo (Z-Order)
-                    val heartPulseTiming = if (bpm > 0) 60000 / bpm else 800
-                    val heartPulseAnim = rememberInfiniteTransition(label = "heartPulse")
-                    val heartPulseAlpha by heartPulseAnim.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(heartPulseTiming / 2), RepeatMode.Reverse), label = "alpha")
-
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(start = 12.dp, top = 8.dp)
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                            .pointerInput(Unit) { detectTapGestures(onTap = { onToggleFavorite(); vibratePhone(context, 50) }) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val heartColor = if (isFavorite) {
-                            if (isMagnetActive) Color.Cyan else Color(0xFFFF5252).copy(alpha = heartPulseAlpha)
-                        } else {
-                            Color.White.copy(alpha = 0.3f)
-                        }
-                        Canvas(modifier = Modifier.size(24.dp)) {
-                            val path = Path().apply {
-                                val w = size.width; val h = size.height
-                                moveTo(w / 2f, h * 0.25f); cubicTo(w * 0.2f, h * -0.1f, w * -0.3f, h * 0.4f, w / 2f, h); cubicTo(w * 1.3f, h * 0.4f, w * 0.8f, h * -0.1f, w / 2f, h * 0.25f)
-                            }
-                            drawPath(path, heartColor)
                         }
                     }
                 }
-                Spacer(Modifier.height(56.dp))
+            }, horizontalAlignment = Alignment.Start) {
+                Text(text = "RADIO : ${station.name}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, spacing = MarqueeSpacing(48.dp)))
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val pulse = if (bpm > 0) 60000 / bpm else 800
+                    val anim = rememberInfiniteTransition()
+                    val liveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse))
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (isMagnetActive) Color.Cyan else Color.Red.copy(alpha = liveAlpha)))
+                    Text(text = if (!isCalibrated) "ANALYZING (${calibrationCountdown}s)" else "LIVE", color = if (isMagnetActive) Color.Cyan else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.alpha(0.8f))
+                    Spacer(Modifier.width(8.dp))
+                    Text(text = audioQuality, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).basicMarquee(iterations = Int.MAX_VALUE).alpha(0.9f))
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(text = "CANCION : ${title.ifEmpty { "En vivo" }}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 40.dp))
+                if (artist.isNotEmpty()) Text(text = "ARTISTA : $artist", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, modifier = Modifier.alpha(0.9f).fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, velocity = 35.dp))
             }
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(modifier = Modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onToggleOscillator() }) }) { 
+                if (isActive) SpectrumVisualizer(
+                    isPlaying = isPlaying, 
+                    energyL = realEnergyL, 
+                    energyR = realEnergyR, 
+                    bandsL = realBandsL,
+                    bandsR = realBandsR,
+                    waveform = realWaveform, 
+                    isMagnetActive = isMagnetActive, 
+                    isMono = isMono,
+                    currentMode = visMode, 
+                    onModeChange = onModeChange
+                ) 
+            }
+
+            // CONTENEDOR UNIFICADO PARA VINILO Y FAVORITO (Control de Z-Order)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                val beatDuration = if (bpm > 0) 60000 / bpm else 500
+                val infiniteBeat = rememberInfiniteTransition(label = "heartBeat")
+                val beatPulse by infiniteBeat.animateFloat(initialValue = 1f, targetValue = 1.6f, animationSpec = infiniteRepeatable(tween(beatDuration / 2, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
+                val energyFactor = ((realEnergyL + realEnergyR) / 2f).coerceIn(0.5f, 1.2f)
+                val finalScale = beatPulse * energyFactor
+
+                // 1. VINILO (Al fondo)
+                Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).offset(y = 10.dp).pointerInput(player) {
+                    detectTapGestures(onDoubleTap = { onToggleAluminum() }, onPress = { 
+                        isTouching = true
+                        val centerX = size.width / 2f
+                        val centerY = size.height / 2f
+                        var initialAngle = Math.toDegrees(atan2((it.y - centerY).toDouble(), (it.x - centerX).toDouble())).toFloat()
+                        var isDragging = false; PlaybackService.stutterProcessor.isScratching = true
+                        try {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(); vibratePhone(context, 5); val pointer = event.changes.firstOrNull { it.pressed }
+                                    if (pointer == null) { isTouching = false; PlaybackService.stutterProcessor.isScratching = false; onScratchEnd(!isPlaying); break }
+                                    val currentAngle = Math.toDegrees(atan2((pointer.position.y - centerY).toDouble(), (pointer.position.x - centerX).toDouble())).toFloat()
+                                    var delta = currentAngle - initialAngle
+                                    if (delta > 180) delta -= 360 else if (delta < -180) delta += 360
+                                    if (Math.abs(delta) > 0.5f || isDragging) { if (!isDragging) { isDragging = true; onScratchStart() }; currentRotation = (currentRotation + delta) % 360f; PlaybackService.stutterProcessor.scratchSpeed = (delta / (120f * 0.016f)).coerceIn(-4f, 4f); initialAngle = currentAngle }
+                                }
+                            }
+                        } finally { isTouching = false; PlaybackService.stutterProcessor.isScratching = false }
+                    })
+                }, contentAlignment = Alignment.Center) {
+                    // ANILLO DE BATERÍA (MOTO G STYLE)
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeWidth = 5.dp.toPx() 
+                        val radius = (size.minDimension / 2) - (strokeWidth / 2)
+                        val batteryColor = when {
+                            isCharging -> Color(0xFF00FF41)
+                            batteryLevel > 0.5f -> Color(0xFF00FF41)
+                            batteryLevel > 0.2f -> Color.Yellow
+                            else -> Color.Red
+                        }
+                        val currentSweep = if (isCharging) chargingSweep else batteryLevel
+                        val currentAlpha = if (isCharging) chargingAlpha else if (batteryLevel <= 0.1f) lowBatteryAlpha else 1.0f
+                        drawArc(color = batteryColor.copy(alpha = currentAlpha), startAngle = -90f, sweepAngle = 360f * currentSweep, useCenter = false, topLeft = Offset(strokeWidth / 2, strokeWidth / 2), size = Size(radius * 2, radius * 2), style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+                        if (isCharging || batteryLevel > 0.15f || batteryLevel <= 0.1f) {
+                            val glowAlpha = if (isCharging) 0.5f else 0.2f
+                            drawArc(color = batteryColor.copy(alpha = glowAlpha * currentAlpha), startAngle = -90f, sweepAngle = 360f * currentSweep, useCenter = false, topLeft = Offset(strokeWidth / 2, strokeWidth / 2), size = Size(radius * 2, radius * 2), style = Stroke(width = strokeWidth * 2.5f, cap = StrokeCap.Round))
+                        }
+                    }
+
+                    // GRUPO DEL VINILO
+                    Box(Modifier.fillMaxWidth(0.88f).aspectRatio(1f).rotate(currentRotation), contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.Black))
+                        Box(Modifier.fillMaxSize(0.97f).clip(CircleShape).background(if (isAluminum) Color(0xFFCCCCCC) else Color.DarkGray), contentAlignment = Alignment.Center) {
+                            SubcomposeAsyncImage(model = artworkUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, error = { DefaultVinyl(station.logoUrl, isAluminum) }, loading = { DefaultVinyl(station.logoUrl, isAluminum) })
+                        }
+                        Canvas(Modifier.fillMaxSize(0.96f)) {
+                            drawArc(color = Color(0xFF00FF41).copy(alpha = 0.4f), startAngle = -5f, sweepAngle = 40f, useCenter = false, style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round))
+                            drawArc(color = Color(0xFF00FF41), startAngle = 0f, sweepAngle = 30f, useCenter = false, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+                        }
+                    }
+                    Box(modifier = Modifier.size(10.dp).scale(if (isPlaying) finalScale else 1f).clip(CircleShape).background(if (isPlaying) Color.Red else Color.Gray.copy(alpha = 0.5f)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
+                }
+
+                // 2. BOTÓN FAVORITO (❤️) — Arriba de todo (Z-Order)
+                val heartPulseTiming = if (bpm > 0) 60000 / bpm else 800
+                val heartPulseAnim = rememberInfiniteTransition(label = "heartPulse")
+                val heartPulseAlpha by heartPulseAnim.animateFloat(initialValue = 0.3f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(heartPulseTiming / 2), RepeatMode.Reverse), label = "alpha")
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 12.dp, top = 8.dp)
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                        .pointerInput(Unit) { detectTapGestures(onTap = { onToggleFavorite(); vibratePhone(context, 50) }) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val heartColor = if (isFavorite) {
+                        if (isMagnetActive) Color.Cyan else Color(0xFFFF5252).copy(alpha = heartPulseAlpha)
+                    } else {
+                        Color.White.copy(alpha = 0.3f)
+                    }
+                    Canvas(modifier = Modifier.size(24.dp)) {
+                        val path = Path().apply {
+                            val w = size.width; val h = size.height
+                            moveTo(w / 2f, h * 0.25f); cubicTo(w * 0.2f, h * -0.1f, w * -0.3f, h * 0.4f, w / 2f, h); cubicTo(w * 1.3f, h * 0.4f, w * 0.8f, h * -0.1f, w / 2f, h * 0.25f)
+                        }
+                        drawPath(path, heartColor)
+                    }
+                }
+            }
+            Spacer(Modifier.height(56.dp))
         }
     }
 }

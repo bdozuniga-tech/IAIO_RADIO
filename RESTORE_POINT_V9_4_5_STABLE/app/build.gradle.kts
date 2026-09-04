@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.radio_vertical"
         minSdk = 24
         targetSdk = 36
-        versionCode = 107
-        versionName = "9.6"
+        versionCode = 105
+        versionName = "9.4.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

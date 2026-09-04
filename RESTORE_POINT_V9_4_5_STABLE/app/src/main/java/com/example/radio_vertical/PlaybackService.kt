@@ -303,19 +303,8 @@ class PlaybackService : MediaLibraryService() {
         
         val dataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
 
-        // LOAD CONTROL OPTIMIZADO PARA STREAMS INTERNACIONALES (Anti-Jitter)
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                30000, // Min buffer (30s)
-                60000, // Max buffer (60s)
-                2500,  // Buffer to start playback (2.5s)
-                5000   // Buffer to resume (5s)
-            )
-            .build()
-
         player = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-            .setLoadControl(loadControl)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
