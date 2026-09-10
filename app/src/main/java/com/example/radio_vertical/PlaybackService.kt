@@ -270,7 +270,7 @@ class PlaybackService : MediaLibraryService() {
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         
         // CARGAR ÚLTIMO ÍNDICE GUARDADO PARA EVITAR RESET A RADIO 1
-        val prefs = getSharedPreferences("ia_radio_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("ia_radio_prefs", MODE_PRIVATE)
         val lastIndex = prefs.getInt("last_station_index", 0)
         updateInternalIndex(lastIndex)
         
@@ -452,9 +452,9 @@ class PlaybackService : MediaLibraryService() {
 
     private fun requestManualFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val playbackAttributes = android.media.AudioAttributes.Builder()
-                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+            val playbackAttributes = AndroidAudioAttributes.Builder()
+                .setUsage(AndroidAudioAttributes.USAGE_MEDIA)
+                .setContentType(AndroidAudioAttributes.CONTENT_TYPE_MUSIC)
                 .build()
             
             audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)

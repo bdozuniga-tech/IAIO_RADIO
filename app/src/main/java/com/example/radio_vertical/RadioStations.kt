@@ -40,17 +40,17 @@ object RadioData {
         RadioStation("LIMBIK FRECUENCIES", "https://limbikfreq.com/listen/limbik_frequencies/128.mp3", Color.Black, "https://limbikfreq.com/static/uploads/limbik_frequencies/logo.png", "https://limbikfreq.com/api/nowplaying/limbik_frequencies", "limbik_frequencies"),
         RadioStation("ISEKOI RADIO", "https://public.isekoi-radio.com/listen/isekoi/radio.mp3", Color.Black, "https://public.isekoi-radio.com/static/uploads/isekoi/logo.png", "https://public.isekoi-radio.com/api/nowplaying/isekoi", "isekoi"),
         RadioStation(
-            name = "MINIMAL TECHNO",
+            name = "UZIC webradio - MINIMAL TECHNO",
             url = "https://uzic.ice.infomaniak.ch/uzic-128.aac",
             backgroundColor = Color.Black,
-            logoUrl = "https://images.unsplash.com/photo-1594623121614-290b3991bf1f?w=600&auto=format&fit=crop",
+            logoUrl = "https://uzic.ch/wp-content/uploads/2025/06/logo_uzic.png",
             apiUrl = "https://uzic.ch/api/now_playing.php"
         ),
         RadioStation(
             name = "DEEP TECHNO",
             url = "https://strm112.1.fm/deeptech_mobile_mp3",
             backgroundColor = Color.Black,
-            logoUrl = "https://images.unsplash.com/photo-1571266028243-e4733b0f0bb1?w=600&auto=format&fit=crop",
+            logoUrl = "https://www.1.fm/images/stations/deeptech.png",
             apiUrl = "https://www.1.fm/api/station/nowplaying?station=deeptech"
         ),
         RadioStation(
