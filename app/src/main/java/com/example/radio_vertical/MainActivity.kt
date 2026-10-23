@@ -497,8 +497,8 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
             stationToRemove = stationName
             return
         } else {
-            if (current.size >= 10) {
-                favoriteMessage = "Superaste el límite de 10 radios favoritas."
+            if (current.size >= 20) {
+                favoriteMessage = "Superaste el límite de 20 radios favoritas."
                 scope.launch {
                     delay(3000)
                     favoriteMessage = null
@@ -848,7 +848,7 @@ fun RadioApp(radioViewModel: RadioViewModel = viewModel(), player: Player?) {
                 val iaioLiveAlpha by anim.animateFloat(0.3f, 1f, infiniteRepeatable(tween(pulse / 2), RepeatMode.Reverse), label = "alpha")
                 val signatureColor = if (syncedMagnetActive) Color.Cyan else Color.White.copy(alpha = iaioLiveAlpha)
                 Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                Text(text = if (isShowInfo) "IAIO RADIO v9.5 (vCode 106) • MEJORAS: Velocímetro GPS 🏎️ • Landscape Full • ❤️ Perfeccionado • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
+                Text(text = if (isShowInfo) "IAIO RADIO v9.8 (vCode 109) • MEJORAS: Límite de 20 Favoritas ❤️ • GPS y Landscape • bdozuniga@gmail.com..... " else "IAIO", color = if (syncedMagnetActive) Color.Cyan else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1, modifier = Modifier.alpha(0.8f).widthIn(max = 200.dp).basicMarquee(iterations = Int.MAX_VALUE, velocity = if (isShowInfo) 80.dp else 0.dp, spacing = MarqueeSpacing(48.dp)))
                 Text(text = "*", color = signatureColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
             }
         }

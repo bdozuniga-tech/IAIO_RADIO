@@ -1,6 +1,6 @@
 {
-  "versionCode": 108,
-  "versionName": "9.7 Landscape & GPS Fix",
+  "versionCode": 109,
+  "versionName": "9.8 Favoritas 20",
   "apkUrl": "https://raw.githubusercontent.com/bdozuniga-tech/IAIO_RADIO/main/iaio_radio.apk",
-  "releaseNotes": "¡IAIO RADIO v9.7! 🚀 MEJORA CRÍTICA: Se habilitó la rotación horizontal automática en todos los dispositivos. Analizador de Estrellas 3D optimizado y Velocímetro GPS corregido. ¡Ahora sí, a rodar! 🏎️🌌⚡"
+  "releaseNotes": "¡IAIO RADIO v9.8! 🚀 MEJORA: Límite de favoritos ampliado a 20 radios ❤️. Estabilidad mejorada y soporte completo."
 }
